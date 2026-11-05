@@ -4,6 +4,7 @@ package storage
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,9 +16,9 @@ import (
 var migrations embed.FS
 
 // Migrate applies all pending schema migrations.
-func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+func Migrate(ctx context.Context, pool *pgxpool.Pool) (err error) {
 	db := stdlib.OpenDBFromPool(pool)
-	defer db.Close()
+	defer func() { err = errors.Join(err, db.Close()) }()
 
 	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrationsFS())
 	if err != nil {
