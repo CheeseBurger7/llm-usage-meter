@@ -21,3 +21,7 @@ _TODO: Postgres over SQLite, `net/http` over chi, sqlc, idempotency on `event_id
 ## What I'd do next
 
 _TODO_
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
