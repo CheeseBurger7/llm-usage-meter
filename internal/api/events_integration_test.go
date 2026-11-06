@@ -57,7 +57,9 @@ func TestIngestEndpointIdempotency(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			t.Fatal(err)
+		}
 		return resp.StatusCode
 	}
 
