@@ -18,3 +18,16 @@ type Event struct {
 	EventTime    pgtype.Timestamptz
 	IngestedAt   pgtype.Timestamptz
 }
+
+type HourlyUsage struct {
+	TenantID         string
+	Model            string
+	HourStart        pgtype.Timestamptz
+	EventCount       int64
+	InputTokens      int64
+	OutputTokens     int64
+	LatencyMsSum     int64
+	LatencyMsMax     int64
+	SourceIngestedAt pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+}
