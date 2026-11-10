@@ -1,0 +1,10 @@
+# Example pricing config. Rates are USD per 1,000,000 tokens.
+# Values below are illustrative placeholders, not real provider prices.
+currency: USD
+models:
+  example-large:
+    input_per_mtok: 3.00
+    output_per_mtok: 15.00
+  example-small:
+    input_per_mtok: 0.25
+    output_per_mtok: 1.25

@@ -2,7 +2,7 @@
 
 LLM usage metering and cost attribution service in Go.
 
-> **Status:** work in progress. Ingestion, dedupe and hourly rollups work today. Pricing, the query
+> **Status:** work in progress. Ingestion, dedupe and hourly rollups work today. Pricing config loading exists; rating, the query
 > API, observability and the packaged demo are planned (see [What I'd do next](#what-id-do-next)).
 
 ## Problem

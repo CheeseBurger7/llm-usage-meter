@@ -18,4 +18,10 @@ follow-up task instead of rewriting silently.
 
 ## Questions
 
-_None yet._
+### Q1: Money representation for rates and cost
+- **Status:** open
+- **Blocks:** nothing (default applied)
+- **Context:** The pricing loader needed a type for per-1M-token rates.
+- **Options:** float64 in config, integer micro-units for arithmetic (simple config, careful math) / decimal strings parsed to big.Rat or a decimal library (exact, extra dependency and heavier config)
+- **Default applied:** Rates parsed as float64; the upcoming rating code should convert to integer micro-units before summing.
+- **Answer:**
