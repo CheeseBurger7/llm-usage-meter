@@ -10,7 +10,7 @@ and docs updated (see Definition of done in CLAUDE.md).
 
 ## Backlog
 
-- [ ] **Pricing: config schema + loader.** `internal/pricing`: YAML config of
+- [~] (PR #PRNUM) **Pricing: config schema + loader.** `internal/pricing`: YAML config of
   per-model input/output rates per 1M tokens; validate on load; example file
   in `deploy/` or `configs/`.
 - [ ] **Pricing: tiered rates + discount rules.** Volume tiers and
