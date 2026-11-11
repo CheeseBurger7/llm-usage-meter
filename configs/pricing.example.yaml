@@ -8,3 +8,15 @@ models:
   example-small:
     input_per_mtok: 0.25
     output_per_mtok: 1.25
+  # Graduated volume pricing: each token is billed at the rate of the tier it
+  # falls into. Input and output volume graduate independently. Omit up_to_mtok
+  # on the last tier. When tiers is set, the flat rates above are not used.
+  example-tiered:
+    tiers:
+      - {up_to_mtok: 10,  input_per_mtok: 2.00, output_per_mtok: 10.00}
+      - {up_to_mtok: 100, input_per_mtok: 1.50, output_per_mtok: 8.00}
+      - {input_per_mtok: 1.00, output_per_mtok: 6.00}
+
+# Per-tenant discount, percent off the gross cost.
+discounts:
+  tenant-acme: 10
