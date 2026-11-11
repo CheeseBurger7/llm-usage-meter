@@ -25,3 +25,11 @@ follow-up task instead of rewriting silently.
 - **Options:** float64 in config, integer micro-units for arithmetic (simple config, careful math) / decimal strings parsed to big.Rat or a decimal library (exact, extra dependency and heavier config)
 - **Default applied:** Rates parsed as float64; the upcoming rating code should convert to integer micro-units before summing.
 - **Answer:**
+
+### Q2: Which window do volume tiers apply over?
+- **Status:** open
+- **Blocks:** nothing (default applied)
+- **Context:** Graduated tiers need a volume window, and the repo does not say whether that is the queried range or a billing month.
+- **Options:** the queried time range (simple, but the same usage costs differently depending on how it is sliced) / calendar-month per tenant+model (matches typical billing, needs the cost endpoint to load the month-to-date offset)
+- **Default applied:** `Price` is a pure function of the `Usage` it is given; the caller picks the window. The cost endpoint task will use the queried range unless answered otherwise.
+- **Answer:**
