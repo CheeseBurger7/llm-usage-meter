@@ -13,7 +13,7 @@ and docs updated (see Definition of done in CLAUDE.md).
 - [~] (PR #8) **Pricing: config schema + loader.** `internal/pricing`: YAML config of
   per-model input/output rates per 1M tokens; validate on load; example file
   in `deploy/` or `configs/`.
-- [ ] **Pricing: tiered rates + discount rules.** Volume tiers and
+- [~] (PR #9) **Pricing: tiered rates + discount rules.** Volume tiers and
   per-tenant discount percentages, applied to rolled-up usage. Table-driven tests.
 - [ ] **Query API: usage endpoint.** `GET /v1/tenants/{id}/usage?from&to&model`
   reading `hourly_usage`. Integration test against Postgres.
