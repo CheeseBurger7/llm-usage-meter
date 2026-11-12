@@ -12,7 +12,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 
 ## Owner actions (not for the agent)
 
-- Answer Q2 to Q9 in OPEN_QUESTIONS.md, or accept the defaults.
+- Answer Q3 to Q9 in OPEN_QUESTIONS.md, or accept the defaults.
 
 ## Done
 
@@ -134,7 +134,9 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 - [ ] **Budgets: storage and evaluation.** `budgets(id, org_id, tenant_id
   nullable, monthly_amount_micros, thresholds)` and `alert_events(budget_id,
   period, threshold, fired_at)` with a unique key so each threshold fires
-  once per period. Evaluate after every rollup run. Also flag any tenant with
+  once per period. A budget is compared with month-to-date cost (cost book,
+  what the org pays the provider), not revenue. Evaluate after every rollup
+  run. Also flag any tenant with
   negative month-to-date margin.
 - [ ] **Dashboard: budgets page.** List budgets per org and tenant, create
   and delete a budget with its thresholds, show alerts fired this period.

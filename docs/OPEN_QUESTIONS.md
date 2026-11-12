@@ -19,20 +19,20 @@ follow-up task instead of rewriting silently.
 ## Questions
 
 ### Q1: Money representation for rates and cost
-- **Status:** open
+- **Status:** answered
 - **Blocks:** nothing (default applied)
 - **Context:** The pricing loader needed a type for per-1M-token rates.
 - **Options:** float64 in config, integer micro-units for arithmetic (simple config, careful math) / decimal strings parsed to big.Rat or a decimal library (exact, extra dependency and heavier config)
 - **Default applied:** Rates parsed as float64; the upcoming rating code should convert to integer micro-units before summing.
-- **Answer:**
+- **Answer:** Keep the default: float64 rates in config, integer micro-units for all arithmetic (as `internal/pricing/rate.go` does).
 
 ### Q2: Which window do volume tiers apply over?
-- **Status:** open
+- **Status:** answered
 - **Blocks:** nothing (default applied)
 - **Context:** Graduated tiers need a volume window, and the repo does not say whether that is the queried range or a billing month.
 - **Options:** the queried time range (simple, but the same usage costs differently depending on how it is sliced) / calendar-month per tenant+model (matches typical billing, needs the cost endpoint to load the month-to-date offset)
 - **Default applied:** `Price` is a pure function of the `Usage` it is given; the caller picks the window. The cost endpoint task will use the calendar month in UTC per tenant and model (the DESIGN.md recommendation) unless answered otherwise.
-- **Answer:**
+- **Answer:** Tenants are billed per calendar month. Volume tiers reset at the start of each month in UTC, per tenant and model, and statements cover the same month.
 
 ### Q3: Where does usage capture run?
 - **Status:** open

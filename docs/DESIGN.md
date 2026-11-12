@@ -93,7 +93,7 @@ environment.
 
 - **Purpose:** tell the customer when a tenant passes a budget or turns unprofitable.
 - **Interface:** a monthly budget per org or per tenant with thresholds, delivered by signed webhook and
-  by email.
+  by email. A budget is a limit on cost (what the org pays the provider), not on revenue.
 - **Decisions:** evaluated after every rollup run. A unique row per budget, period and threshold makes
   each alert fire once.
 
