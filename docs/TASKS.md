@@ -15,7 +15,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 - Update CLAUDE.md: Purpose, Scope and Non-goals still describe a portfolio
   project with auth, UI and billing integrations out of scope. The tasks
   below put all three in scope.
-- Answer Q2 to Q8 in OPEN_QUESTIONS.md, or accept the defaults.
+- Answer Q2 to Q9 in OPEN_QUESTIONS.md, or accept the defaults.
 
 ## Done
 
@@ -113,7 +113,8 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 
 ### Milestone 4: dashboard (C3, C8)
 
-- [ ] **Dashboard login.** `users(id, org_id, email, created_at)`. Email
+- [ ] **Dashboard login.** `users(id, org_id, email, created_at)` with a
+  unique index on `email`. Email
   magic link: single-use token, stored hashed, 15-minute expiry. Session
   cookie is HttpOnly, Secure and SameSite=Lax. Email sending sits behind an
   interface with a log-only sender for development (Q5).
@@ -138,6 +139,8 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   period, threshold, fired_at)` with a unique key so each threshold fires
   once per period. Evaluate after every rollup run. Also flag any tenant with
   negative month-to-date margin.
+- [ ] **Dashboard: budgets page.** List budgets per org and tenant, create
+  and delete a budget with its thresholds, show alerts fired this period.
 - [ ] **Alerts: webhook delivery.** POST a JSON payload signed with
   HMAC-SHA256 using a per-org secret. Retry with backoff. Record delivery
   status.
@@ -166,6 +169,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   with a clear error body and never drops already-accepted events.
 - [ ] **Raw event retention.** Job that deletes raw events older than the
   retention window once their month has a closed statement (Q7). Rollups are
-  kept.
+  kept. Rollup recompute and backfill must skip hours whose raw events were
+  purged, or they would overwrite kept rollups with zeros (integration test).
 - [ ] **Grafana dashboard JSON** in `dashboards/` driven by the metrics above.
 - [ ] **Helm chart** in `deploy/helm/`.

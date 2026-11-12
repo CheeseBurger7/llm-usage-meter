@@ -31,7 +31,7 @@ follow-up task instead of rewriting silently.
 - **Blocks:** nothing (default applied)
 - **Context:** Graduated tiers need a volume window, and the repo does not say whether that is the queried range or a billing month.
 - **Options:** the queried time range (simple, but the same usage costs differently depending on how it is sliced) / calendar-month per tenant+model (matches typical billing, needs the cost endpoint to load the month-to-date offset)
-- **Default applied:** `Price` is a pure function of the `Usage` it is given; the caller picks the window. The cost endpoint task will use the queried range unless answered otherwise.
+- **Default applied:** `Price` is a pure function of the `Usage` it is given; the caller picks the window. The cost endpoint task will use the calendar month in UTC per tenant and model (the DESIGN.md recommendation) unless answered otherwise.
 - **Answer:**
 
 ### Q3: Where does usage capture run?
@@ -80,4 +80,12 @@ follow-up task instead of rewriting silently.
 - **Context:** The agent must not invent external accounts or endpoints.
 - **Options:** push per-tenant usage quantities to the customer's own Stripe account / push rated amounts as invoice items
 - **Default applied:** None. The task waits for an answer and test credentials.
+- **Answer:**
+
+### Q9: Product name and domain
+- **Status:** open
+- **Blocks:** nothing (default applied)
+- **Context:** Signup, the quickstart page and emails need a product name and domain. The API key prefix `lum_` is derived from the repo name and is hard to change once customers hold keys.
+- **Options:** keep `llm-usage-meter` and `lum_` (no work, generic name) / pick a product name before the API key task ships (keys carry the brand from day one, needs a decision now)
+- **Default applied:** Working name `llm-usage-meter`, key prefix `lum_`. Signup and email copy read the name from config so a rename touches one place.
 - **Answer:**
