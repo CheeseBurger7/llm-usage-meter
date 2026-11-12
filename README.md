@@ -4,7 +4,8 @@ LLM usage metering and cost attribution service in Go, being built into a hosted
 teams selling AI features bill their own customers for LLM usage.
 
 > **Status:** work in progress. Ingestion, dedupe, hourly rollups and the rating library (per-model
-> rates, volume tiers, discounts) work today. API keys and multi-tenant orgs, the capture proxy, the
+> rates, volume tiers, discounts) work today. Orgs and API keys can be created and verified, but the
+> API does not enforce them yet. Request authentication and per-org data, the capture proxy, the
 > query and cost API and the dashboard are planned (see [What I'd do next](#what-id-do-next) and
 > [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -93,6 +94,7 @@ service. The full component design, with all ten components, is in
 | Rating: rates, tiers, discounts | `internal/pricing` | [docs/pricing.md](docs/pricing.md) |
 | Schema, migrations, sqlc queries | `internal/storage` | [docs/ingestion.md](docs/ingestion.md#schema-and-queries) |
 | Orgs and API keys tables | `internal/storage` | [docs/orgs-and-keys.md](docs/orgs-and-keys.md) |
+| API key generation, verification, admin commands | `internal/auth`, `cmd/server` | [docs/api-keys.md](docs/api-keys.md) |
 
 ## Design decisions and tradeoffs
 
