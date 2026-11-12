@@ -1,9 +1,12 @@
 # llm-usage-meter
 
-LLM usage metering and cost attribution service in Go.
+LLM usage metering and cost attribution service in Go, being built into a hosted product that lets
+teams selling AI features bill their own customers for LLM usage.
 
-> **Status:** work in progress. Ingestion, dedupe and hourly rollups work today. Pricing config loading exists; rating, the query
-> API, observability and the packaged demo are planned (see [What I'd do next](#what-id-do-next)).
+> **Status:** work in progress. Ingestion, dedupe, hourly rollups and the rating library (per-model
+> rates, volume tiers, discounts) work today. API keys and multi-tenant orgs, the capture proxy, the
+> query and cost API and the dashboard are planned (see [What I'd do next](#what-id-do-next) and
+> [docs/DESIGN.md](docs/DESIGN.md)).
 
 ## Problem
 
@@ -16,7 +19,8 @@ billing number that cannot be reproduced cannot be trusted.
 This service ingests LLM call events (tenant, model, tokens, latency), de-duplicates them on
 `event_id`, and aggregates them into hourly per-tenant, per-model rollups. Every rollup is recomputed
 from the raw events, so it is idempotent and repairable. Rating (per-model rates, tiers, discounts)
-and a query API for per-tenant usage and cost build on those rollups.
+prices those rollups. A query API for usage, cost, revenue and margin, a proxy that captures usage
+from real LLM calls, and a dashboard are planned on top.
 
 ## Quickstart
 
@@ -56,7 +60,7 @@ Configuration:
 | `LISTEN_ADDR` | `:8080` | HTTP listen address |
 | `ROLLUP_INTERVAL` | `1m` | How often the scheduler re-rolls the previous and current hour |
 
-A one-command `docker compose` demo (server, Postgres, Prometheus, Grafana) is planned.
+A one-command `docker compose` demo (server, proxy, Postgres, Prometheus, Grafana) is planned.
 
 Other commands: `make test` (integration tests use testcontainers and skip without Docker),
 `make lint`, `make generate` (rebuild sqlc code).
@@ -65,23 +69,28 @@ Other commands: `make test` (integration tests use testcontainers and skip witho
 
 ```mermaid
 flowchart LR
-    C[Clients / LLM proxy] -->|POST /v1/events| I[Ingest API]
+    X[Capture proxy, customer-run] -.->|planned| I
+    C[Clients] -->|POST /v1/events| I[Ingest API]
     I -->|INSERT ON CONFLICT DO NOTHING| E[(events)]
     E -->|recompute per hour| R[Rollup]
     S[Scheduler / startup scan / backfill CLI] --> R
     R -->|upsert| H[(hourly_usage)]
-    H -.->|planned| P[Pricing / rating]
-    P -.->|planned| Q[Query API]
-    O[OTel + Prometheus] -.->|planned| I
+    H -.->|planned| Q[Query and cost API]
+    P[Pricing / rating] -.->|planned| Q
+    Q -.->|planned| D[Dashboard, alerts, statements]
 ```
 
-Solid lines exist today; dotted lines are planned. Everything runs in one Go binary backed by
-Postgres.
+Solid lines exist today; dotted lines are planned. The rating package exists but nothing calls it
+until the cost API lands. Everything runs in one Go binary backed by Postgres, except the capture
+proxy, which runs in the customer's environment so prompts and provider keys never reach the
+service. The full component design, with all ten components, is in
+[docs/DESIGN.md](docs/DESIGN.md).
 
 | Component | Package | Docs |
 | --- | --- | --- |
 | Ingest API and dedupe | `internal/ingest`, `internal/api` | [docs/ingestion.md](docs/ingestion.md) |
 | Hourly rollups and backfill | `internal/rollup` | [docs/rollups.md](docs/rollups.md) |
+| Rating: rates, tiers, discounts | `internal/pricing` | [docs/pricing.md](docs/pricing.md) |
 | Schema, migrations, sqlc queries | `internal/storage` | [docs/ingestion.md](docs/ingestion.md#schema-and-queries) |
 
 ## Design decisions and tradeoffs
@@ -111,21 +120,31 @@ Postgres.
 - **Timestamps normalized to UTC and truncated to microseconds**, Postgres `timestamptz` precision.
   Otherwise a re-sent event would never compare equal to its stored copy.
 
-Non-goals for v1: authentication, multi-region, a UI beyond Grafana, real billing integrations.
+Non-goals: multi-region, a hosted proxy that sees prompts or provider keys, and the service making
+LLM calls itself.
 
 ## What I'd do next
 
-Roughly in order (the full backlog is in [docs/TASKS.md](docs/TASKS.md)):
+Six milestones, in order. The product is sellable at the end of the fourth. The full backlog is in
+[docs/TASKS.md](docs/TASKS.md) and the open decisions are in
+[docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md).
 
-1. **Pricing:** YAML-configured per-model rates, volume tiers and per-tenant discounts.
-2. **Query API:** `GET /v1/tenants/{id}/usage` and a cost endpoint, filtered by time range and model.
-3. **Observability:** Prometheus `/metrics`, OpenTelemetry traces and metrics, and a committed
-   Grafana dashboard.
-4. **Packaging:** Dockerfile, `docker compose` demo, and a Helm chart.
-5. **AI angle:** a load generator that includes duplicates, and a proxy/SDK wrapper that records
-   usage from real LLM API calls.
-6. **Scaling the rollups:** bound the startup scan by a time range, and move to incremental
-   aggregation if the per-hour re-scan becomes the bottleneck.
+1. **Multi-tenant core:** orgs and scoped API keys, events and rollups keyed by org, cache token
+   and feature fields, a batch ingest endpoint and per-key rate limits.
+2. **Capture:** a Go client library and a proxy the customer runs next to their app. It reads
+   token usage from Anthropic and OpenAI-compatible responses, streaming included, and fails open.
+3. **Read side:** versioned cost and price books per org, and `GET /v1/usage` and `GET /v1/cost`
+   returning cost, revenue and margin. Volume tiers apply per calendar month.
+4. **Dashboard:** email magic-link login, overview, tenants, API keys, price books and signup,
+   server-rendered from the same binary.
+5. **Alerts and export:** budgets with signed webhook and email alerts, frozen monthly statements
+   with CSV export, reconciliation against the provider's usage report, and a Stripe export.
+6. **Platform ops:** Prometheus metrics and OpenTelemetry traces, Dockerfile and `docker compose`
+   demo, backups with a restore drill, plan quotas, raw event retention, Grafana dashboard and a
+   Helm chart.
+
+Beyond that: bound the startup rollup scan by a time range, and move to incremental aggregation if
+the per-hour re-scan becomes the bottleneck.
 
 ## License
 

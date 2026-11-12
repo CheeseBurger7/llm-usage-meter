@@ -1,14 +1,14 @@
 # Project: LLM Usage Metering & Cost Attribution Service
 
 ## Purpose
-Public portfolio project. A Go service that ingests LLM call events (tenant, model, tokens, latency), aggregates them hourly, and exposes per-tenant usage and cost via an API. The goal is to demonstrate production-grade platform engineering applied to AI infrastructure: reliability, observability, deployability.
+A hosted service, developed in a public repo, that lets teams selling AI features bill their own customers for LLM usage with numbers they can audit. A Go service ingests LLM call events (org, tenant, model, tokens, latency), aggregates them hourly, prices them against per-org cost and price books, and exposes usage, cost, revenue and margin via an API and a dashboard. The target buyer is a seed to Series A team with usage-based pricing and no in-house metering. The component design is in `docs/DESIGN.md` (components C1 to C10).
 
 ## Owner context
 - Meet, senior-level platform/software engineer (Go, Kubernetes, Helm, Terraform, AWS, OpenTelemetry, Prometheus, Python, SQL).
-- Goal: show AI-era engineering skill publicly on GitHub to strengthen a remote-friendly job search.
+- Goal: turn this into a paid hosted product while keeping the engineering visible on GitHub.
 - Prefers: small PRs, clear commit history, working quickstarts, written design tradeoffs.
 
-## Scope (v1)
+## Scope (portfolio v1, built; the hosted-product scope is in docs/DESIGN.md and docs/TASKS.md)
 1. **Ingestion API**: accept usage events (event_id, tenant_id, model, input_tokens, output_tokens, latency_ms, timestamp). Idempotent on event_id.
 2. **Aggregation**: hourly rollups per tenant/model. Backfill job for missed windows (idempotent, safe to re-run).
 3. **Pricing/rating**: configurable per-model rates, tiered pricing and discount rules, in config files.
@@ -18,7 +18,7 @@ Public portfolio project. A Go service that ingests LLM call events (tenant, mod
 7. **Deployability**: Dockerfile, Helm chart, one-command local demo (docker compose or kind).
 8. **AI angle**: small proxy/SDK wrapper that records usage from real LLM API calls, plus a load generator for the demo.
 
-Non-goals for v1: auth/multi-region, UI beyond Grafana, real billing integrations.
+Now in scope for the hosted product: multi-tenant orgs and API keys, dashboard login, a server-rendered dashboard, budgets and alerts, monthly statements and a Stripe usage export. Still non-goals: multi-region, a hosted proxy that sees prompts or provider keys, the service making LLM calls itself.
 
 ## Suggested stack (confirm before locking in)
 - Go 1.23+, standard `net/http` or chi, `sqlc` + Postgres (SQLite acceptable for quick start), `golangci-lint`, GitHub Actions CI.
@@ -28,6 +28,12 @@ Non-goals for v1: auth/multi-region, UI beyond Grafana, real billing integration
 ```
 cmd/server/        # main service
 cmd/loadgen/       # load generator
+cmd/proxy/         # customer-run capture proxy
+client/            # Go client library (batching, retries)
+internal/auth/     # orgs, API keys, dashboard login
+internal/alerts/   # budgets and alert delivery
+internal/export/   # statements, CSV, Stripe
+web/               # server-rendered dashboard
 internal/ingest/   # event intake + dedupe
 internal/rollup/   # hourly aggregation + backfill
 internal/pricing/  # rating rules
@@ -39,10 +45,8 @@ dashboards/        # Grafana JSON
 docs/              # architecture, design decisions
 ```
 
-## 6-week plan
-- Week 1: repo skeleton, CI (test + lint), README outline, profile README, pin repos.
-- Weeks 2-4: ingestion, dedupe, rollups, pricing rules, query API, tests.
-- Weeks 5-6: OTel/Prometheus, Grafana dashboard, Helm chart, local demo, GIF of dashboard. Publish writeup #1 (e.g. "Making usage metering idempotent across restarts").
+## Plan
+Six milestones in `docs/TASKS.md`: multi-tenant core, capture, read side, dashboard (sellable here), alerts and export, platform ops. Open decisions and their defaults are in `docs/OPEN_QUESTIONS.md`.
 
 ## Definition of done per feature
 - Unit tests, plus an integration test where storage is involved.
