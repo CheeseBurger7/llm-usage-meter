@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/CheeseBurger7/llm-usage-meter/internal/api"
+	"github.com/CheeseBurger7/llm-usage-meter/internal/auth"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/ingest"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/rollup"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/storage"
@@ -78,7 +79,7 @@ func serve(log *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewRouter(ingest.NewStore(pool), log),
+		Handler:           api.NewRouter(ingest.NewStore(pool), auth.New(pool), log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
