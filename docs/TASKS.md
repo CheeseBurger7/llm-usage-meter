@@ -31,8 +31,9 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 - [ ] **Auth: API key generation and verification.** New `internal/auth`.
   Generate keys as `lum_<scope>_<random>` from 32 random bytes. Store only the
   SHA-256 hash and an 8-character prefix. `Verify(ctx, key)` returns org ID and
-  scope, and rejects revoked keys. Add `server keys create --org --scope` and
-  `server orgs create --name` subcommands. The plaintext key is printed once.
+  scope, and rejects revoked keys. Add `server keys create --org --scope`,
+  `server keys revoke --prefix` and `server orgs create --name` subcommands.
+  The plaintext key is printed once.
 - [ ] **Auth: HTTP middleware.** `Authorization: Bearer <key>`. 401 for a
   missing or unknown key, 403 for the wrong scope. Puts the org ID in the
   request context. `/healthz` stays open. `POST /v1/events` requires `ingest`
@@ -56,6 +57,12 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   event does not fail the batch. Request body size limit.
 - [ ] **Ingest: per-key rate limit.** In-memory token bucket per API key.
   429 with `Retry-After`. Limit is configurable by environment variable.
+- [ ] **Milestone 1 acceptance: two-org isolation test.** End-to-end
+  integration test over HTTP against Postgres: two orgs each ingest with
+  their own key (single and batch), rollups run, and neither org's rows
+  appear under the other in `events` or `hourly_usage`. Also covers a
+  revoked key (401) and a `read` key on the ingest route (403). This is the
+  milestone's "done when" in DESIGN.md.
 
 ### Milestone 2: capture (C1)
 
