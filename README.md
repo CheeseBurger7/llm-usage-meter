@@ -92,6 +92,7 @@ service. The full component design, with all ten components, is in
 | Hourly rollups and backfill | `internal/rollup` | [docs/rollups.md](docs/rollups.md) |
 | Rating: rates, tiers, discounts | `internal/pricing` | [docs/pricing.md](docs/pricing.md) |
 | Schema, migrations, sqlc queries | `internal/storage` | [docs/ingestion.md](docs/ingestion.md#schema-and-queries) |
+| Orgs and API keys tables | `internal/storage` | [docs/orgs-and-keys.md](docs/orgs-and-keys.md) |
 
 ## Design decisions and tradeoffs
 
