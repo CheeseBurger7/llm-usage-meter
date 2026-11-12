@@ -12,9 +12,6 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 
 ## Owner actions (not for the agent)
 
-- Update CLAUDE.md: Purpose, Scope and Non-goals still describe a portfolio
-  project with auth, UI and billing integrations out of scope. The tasks
-  below put all three in scope.
 - Answer Q2 to Q9 in OPEN_QUESTIONS.md, or accept the defaults.
 
 ## Done
