@@ -14,8 +14,13 @@ import (
 const getEvent = `-- name: GetEvent :one
 SELECT event_id, tenant_id, model, input_tokens, output_tokens, latency_ms, event_time
 FROM events
-WHERE event_id = $1
+WHERE org_id = $1 AND event_id = $2
 `
+
+type GetEventParams struct {
+	OrgID   pgtype.UUID
+	EventID string
+}
 
 type GetEventRow struct {
 	EventID      string
@@ -27,8 +32,8 @@ type GetEventRow struct {
 	EventTime    pgtype.Timestamptz
 }
 
-func (q *Queries) GetEvent(ctx context.Context, eventID string) (GetEventRow, error) {
-	row := q.db.QueryRow(ctx, getEvent, eventID)
+func (q *Queries) GetEvent(ctx context.Context, arg GetEventParams) (GetEventRow, error) {
+	row := q.db.QueryRow(ctx, getEvent, arg.OrgID, arg.EventID)
 	var i GetEventRow
 	err := row.Scan(
 		&i.EventID,
@@ -43,13 +48,14 @@ func (q *Queries) GetEvent(ctx context.Context, eventID string) (GetEventRow, er
 }
 
 const insertEvent = `-- name: InsertEvent :one
-INSERT INTO events (event_id, tenant_id, model, input_tokens, output_tokens, latency_ms, event_time)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (event_id) DO NOTHING
+INSERT INTO events (org_id, event_id, tenant_id, model, input_tokens, output_tokens, latency_ms, event_time)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (org_id, event_id) DO NOTHING
 RETURNING event_id
 `
 
 type InsertEventParams struct {
+	OrgID        pgtype.UUID
 	EventID      string
 	TenantID     string
 	Model        string
@@ -59,9 +65,10 @@ type InsertEventParams struct {
 	EventTime    pgtype.Timestamptz
 }
 
-// Returns the event_id when a row was inserted; no row when the id already exists.
+// Returns the event_id when a row was inserted; no row when the org already has that id.
 func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (string, error) {
 	row := q.db.QueryRow(ctx, insertEvent,
+		arg.OrgID,
 		arg.EventID,
 		arg.TenantID,
 		arg.Model,

@@ -10,14 +10,15 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/CheeseBurger7/llm-usage-meter/internal/auth"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/ingest"
 )
 
 const maxBodyBytes = 1 << 20
 
-// Ingester stores events idempotently. *ingest.Store implements it.
+// Ingester stores an org's events idempotently. *ingest.Store implements it.
 type Ingester interface {
-	Ingest(ctx context.Context, ev ingest.Event) (ingest.Result, error)
+	Ingest(ctx context.Context, org auth.OrgID, ev ingest.Event) (ingest.Result, error)
 }
 
 type eventRequest struct {
@@ -35,9 +36,20 @@ type errorResponse struct {
 	Fields map[string]string `json:"fields,omitempty"`
 }
 
-// NewIngestHandler returns the handler for POST /v1/events.
+// NewIngestHandler returns the handler for POST /v1/events. It must sit behind
+// auth.Require: the org an event is stored under comes from the verified key in
+// the request context. The payload has no org field.
 func NewIngestHandler(store Ingester, log *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, ok := auth.IdentityFromContext(r.Context())
+		if !ok {
+			// The route was registered without the auth middleware. Refuse
+			// instead of storing an event under no org.
+			log.ErrorContext(r.Context(), "ingest handler reached without an identity")
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "internal error"})
+			return
+		}
+
 		var req eventRequest
 		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 		dec.DisallowUnknownFields()
@@ -55,7 +67,7 @@ func NewIngestHandler(store Ingester, log *slog.Logger) http.Handler {
 			return
 		}
 
-		res, err := store.Ingest(r.Context(), ingest.Event{
+		res, err := store.Ingest(r.Context(), id.OrgID, ingest.Event{
 			EventID:      req.EventID,
 			TenantID:     req.TenantID,
 			Model:        req.Model,
@@ -72,7 +84,7 @@ func NewIngestHandler(store Ingester, log *slog.Logger) http.Handler {
 		case errors.Is(err, ingest.ErrConflict):
 			writeJSON(w, http.StatusConflict, errorResponse{Error: err.Error()})
 		case err != nil:
-			log.ErrorContext(r.Context(), "ingest failed", "event_id", req.EventID, "err", err)
+			log.ErrorContext(r.Context(), "ingest failed", "org_id", id.OrgID.String(), "event_id", req.EventID, "err", err)
 			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "internal error"})
 		case res == ingest.Created:
 			writeJSON(w, http.StatusCreated, map[string]string{"status": "created"})

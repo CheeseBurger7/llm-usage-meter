@@ -38,7 +38,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   missing or unknown key, 403 for the wrong scope. Puts the org ID in the
   request context. `/healthz` stays open. `POST /v1/events` requires `ingest`
   scope. Never log the key.
-- [ ] **Events: scope to org.** Migration: add `org_id` to `events`, primary
+- [~] (PR #14) **Events: scope to org.** Migration: add `org_id` to `events`, primary
   key becomes `(org_id, event_id)`, indexes lead with `org_id`. The ingest
   store takes the org ID from the request context, never from the payload. The
   same `event_id` in two orgs must not conflict (integration test). No

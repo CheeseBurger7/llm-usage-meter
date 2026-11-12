@@ -27,6 +27,7 @@ type Event struct {
 	LatencyMs    int64
 	EventTime    pgtype.Timestamptz
 	IngestedAt   pgtype.Timestamptz
+	OrgID        pgtype.UUID
 }
 
 type HourlyUsage struct {
