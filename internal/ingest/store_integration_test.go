@@ -64,13 +64,17 @@ func newOrg(t *testing.T, pool *pgxpool.Pool, name string) auth.OrgID {
 
 func event() ingest.Event {
 	return ingest.Event{
-		EventID:      "evt-1",
-		TenantID:     "tenant-a",
-		Model:        "claude-sonnet",
-		InputTokens:  100,
-		OutputTokens: 50,
-		LatencyMs:    420,
-		Timestamp:    time.Date(2026, 11, 1, 12, 0, 0, 123456789, time.UTC),
+		EventID:          "evt-1",
+		TenantID:         "tenant-a",
+		Provider:         "anthropic",
+		Model:            "claude-sonnet",
+		Feature:          "chat",
+		InputTokens:      100,
+		OutputTokens:     50,
+		CacheReadTokens:  30,
+		CacheWriteTokens: 20,
+		LatencyMs:        420,
+		Timestamp:        time.Date(2026, 11, 1, 12, 0, 0, 123456789, time.UTC),
 	}
 }
 
@@ -93,14 +97,54 @@ func TestIngestCreatedThenDuplicate(t *testing.T) {
 	}
 }
 
+// Every field of the event reaches its column, and the optional ones are
+// stored as zero and empty when the client leaves them out.
+func TestIngestStoresUsageFields(t *testing.T) {
+	s, org, pool := newStore(t)
+	ctx := context.Background()
+
+	full := event()
+	bare := event()
+	bare.EventID = "evt-bare"
+	bare.Feature, bare.CacheReadTokens, bare.CacheWriteTokens = "", 0, 0
+	for _, ev := range []ingest.Event{full, bare} {
+		if got, err := s.Ingest(ctx, org, ev); err != nil || got != ingest.Created {
+			t.Fatalf("ingest %s = %v, %v; want Created", ev.EventID, got, err)
+		}
+		// The re-send is compared against what was read back from the columns.
+		if got, err := s.Ingest(ctx, org, ev); err != nil || got != ingest.Duplicate {
+			t.Fatalf("re-send %s = %v, %v; want Duplicate", ev.EventID, got, err)
+		}
+	}
+
+	for _, want := range []ingest.Event{full, bare} {
+		var got ingest.Event
+		err := pool.QueryRow(ctx, `SELECT provider, feature, cache_read_tokens, cache_write_tokens
+		                           FROM events WHERE org_id = $1 AND event_id = $2`, org, want.EventID).
+			Scan(&got.Provider, &got.Feature, &got.CacheReadTokens, &got.CacheWriteTokens)
+		if err != nil {
+			t.Fatalf("read %s: %v", want.EventID, err)
+		}
+		if got.Provider != want.Provider || got.Feature != want.Feature ||
+			got.CacheReadTokens != want.CacheReadTokens || got.CacheWriteTokens != want.CacheWriteTokens {
+			t.Fatalf("%s stored as %+v; want %+v", want.EventID, got, want)
+		}
+	}
+}
+
 func TestIngestConflictOnAnyDifferingField(t *testing.T) {
 	mutations := map[string]func(*ingest.Event){
-		"tenant_id":     func(e *ingest.Event) { e.TenantID = "tenant-b" },
-		"model":         func(e *ingest.Event) { e.Model = "other" },
-		"input_tokens":  func(e *ingest.Event) { e.InputTokens++ },
-		"output_tokens": func(e *ingest.Event) { e.OutputTokens++ },
-		"latency_ms":    func(e *ingest.Event) { e.LatencyMs++ },
-		"timestamp":     func(e *ingest.Event) { e.Timestamp = e.Timestamp.Add(time.Second) },
+		"tenant_id":          func(e *ingest.Event) { e.TenantID = "tenant-b" },
+		"provider":           func(e *ingest.Event) { e.Provider = "openai" },
+		"model":              func(e *ingest.Event) { e.Model = "other" },
+		"feature":            func(e *ingest.Event) { e.Feature = "search" },
+		"feature unset":      func(e *ingest.Event) { e.Feature = "" },
+		"input_tokens":       func(e *ingest.Event) { e.InputTokens++ },
+		"output_tokens":      func(e *ingest.Event) { e.OutputTokens++ },
+		"cache_read_tokens":  func(e *ingest.Event) { e.CacheReadTokens++ },
+		"cache_write_tokens": func(e *ingest.Event) { e.CacheWriteTokens++ },
+		"latency_ms":         func(e *ingest.Event) { e.LatencyMs++ },
+		"timestamp":          func(e *ingest.Event) { e.Timestamp = e.Timestamp.Add(time.Second) },
 	}
 	s, org, _ := newStore(t)
 	ctx := context.Background()

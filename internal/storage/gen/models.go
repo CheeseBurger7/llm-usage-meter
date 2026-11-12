@@ -19,15 +19,19 @@ type ApiKey struct {
 }
 
 type Event struct {
-	EventID      string
-	TenantID     string
-	Model        string
-	InputTokens  int64
-	OutputTokens int64
-	LatencyMs    int64
-	EventTime    pgtype.Timestamptz
-	IngestedAt   pgtype.Timestamptz
-	OrgID        pgtype.UUID
+	EventID          string
+	TenantID         string
+	Model            string
+	InputTokens      int64
+	OutputTokens     int64
+	LatencyMs        int64
+	EventTime        pgtype.Timestamptz
+	IngestedAt       pgtype.Timestamptz
+	OrgID            pgtype.UUID
+	Provider         string
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+	Feature          string
 }
 
 type HourlyUsage struct {

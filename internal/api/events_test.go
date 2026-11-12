@@ -33,7 +33,7 @@ func (f *fakeIngester) Ingest(_ context.Context, org auth.OrgID, ev ingest.Event
 // testOrg is the org of the identity that post puts in the request context.
 var testOrg = auth.OrgID{0xA1}
 
-const validBody = `{"event_id":"e1","tenant_id":"t1","model":"m","input_tokens":10,"output_tokens":5,"latency_ms":120,"timestamp":"2026-01-02T03:04:05Z"}`
+const validBody = `{"event_id":"e1","tenant_id":"t1","provider":"p","model":"m","input_tokens":10,"output_tokens":5,"latency_ms":120,"timestamp":"2026-01-02T03:04:05Z"}`
 
 func post(t *testing.T, f *fakeIngester, body string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -74,8 +74,20 @@ func TestIngestHandlerStatus(t *testing.T) {
 func TestIngestHandlerMapsFields(t *testing.T) {
 	f := &fakeIngester{res: ingest.Created}
 	post(t, f, validBody)
-	want := ingest.Event{EventID: "e1", TenantID: "t1", Model: "m", InputTokens: 10, OutputTokens: 5, LatencyMs: 120, Timestamp: f.got.Timestamp}
+	want := ingest.Event{EventID: "e1", TenantID: "t1", Provider: "p", Model: "m", InputTokens: 10, OutputTokens: 5, LatencyMs: 120, Timestamp: f.got.Timestamp}
 	if f.got != want || f.got.Timestamp.Year() != 2026 {
+		t.Fatalf("got %+v", f.got)
+	}
+}
+
+// feature and the cache token counts are optional in the payload.
+func TestIngestHandlerMapsOptionalFields(t *testing.T) {
+	f := &fakeIngester{res: ingest.Created}
+	body := strings.Replace(validBody, `{`, `{"feature":"chat","cache_read_tokens":30,"cache_write_tokens":20,`, 1)
+	if got := post(t, f, body).Code; got != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", got)
+	}
+	if f.got.Feature != "chat" || f.got.CacheReadTokens != 30 || f.got.CacheWriteTokens != 20 {
 		t.Fatalf("got %+v", f.got)
 	}
 }

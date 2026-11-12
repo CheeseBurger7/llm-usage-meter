@@ -113,3 +113,19 @@ follow-up task instead of rewriting silently.
 - **Options:** hex, 64 characters, key is 75 long (standard library only, no `_` or `-` inside the secret, longer) / base62, about 43 characters (shorter, needs an encoder) / base64url, 43 characters (standard library, but contains `_` and `-`, which collide with the separator and break double-click selection)
 - **Default applied:** Hex. The stored prefix is the first 8 hex characters of the secret.
 - **Answer:**
+
+### Q13: Is `provider` free text or a fixed list?
+- **Status:** open
+- **Blocks:** nothing (default applied)
+- **Context:** The events task makes `provider` required but does not say what values are allowed. It becomes part of the `hourly_usage` key and of price book lookups, so `Anthropic` and `anthropic` would be two rollup rows and could miss a rate. Tightening later means rewriting stored values.
+- **Options:** free text, compared byte for byte (same as `tenant_id`, `model` and `feature`; no surprise rewrites; misspellings split usage) / lowercase and trim on ingest (fewer splits; the stored value differs from what was sent) / fixed list such as `anthropic`, `openai`, `google` (no splits; every new provider needs a release, and self-hosted models have no entry)
+- **Default applied:** Free text, 1 to 256 bytes, no normalization. The capture proxy will set the value itself, so most events get a consistent spelling.
+- **Answer:**
+
+### Q14: Does `input_tokens` include cache tokens?
+- **Status:** open
+- **Blocks:** nothing (default applied)
+- **Context:** Providers do not agree on whether the input token count in a response includes cached tokens. The event schema needs one meaning, or cost is wrong for one group of providers. The "Pricing: cache token rates" task prices cache tokens on top of input tokens, which only works if they do not overlap.
+- **Options:** exclusive: `input_tokens` leaves out cache tokens and total input is the sum of the three (no double billing; capture must subtract for providers that report an inclusive count) / inclusive: `input_tokens` is the total and cache counts are a breakdown (pricing must subtract, and an event with cache counts above `input_tokens` becomes invalid)
+- **Default applied:** Exclusive. Ingest stores the three counts as sent and does not cross-check them. The proxy tasks must map each provider's usage block to this meaning, verified against the provider's current docs.
+- **Answer:**

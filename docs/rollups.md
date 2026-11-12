@@ -30,5 +30,6 @@ Each hour is one atomic statement, retried up to 5 times with exponential backof
 ## Known limits
 
 - **Rollups are not per org yet.** `events` is keyed by org, but `hourly_usage` still groups by `(tenant_id, model, hour_start)`, so two orgs that use the same `tenant_id` and model share a rollup row. Nothing reads `hourly_usage` over the API yet. The fix is the "Rollups: org and new dimensions" task in [TASKS.md](TASKS.md).
+- **Rollups ignore the newer event fields.** `events` records `provider`, `feature`, `cache_read_tokens` and `cache_write_tokens`, but `hourly_usage` neither groups by the first two nor sums the last two yet. Same task as above.
 - Events older than the scheduler's two-hour window are only picked up by the startup scan or a manual backfill.
 - The startup scan aggregates all of `events` to find stale hours. Fine for v1; it should be bounded by a time range as data grows.
