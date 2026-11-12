@@ -83,9 +83,8 @@ request body is read, so a rejected request never reaches the store.
 `auth.Require(verifier, scope, log)` is the middleware, applied per route in
 `api.NewRouter`. A handler behind it reads the org with
 `auth.IdentityFromContext(r.Context())`. The org always comes from the key,
-never from the request body. Storing events per org is the next task in
-[TASKS.md](TASKS.md); until it ships, events from all orgs share one
-`event_id` space.
+never from the request body. Events are stored under that org; see
+[ingestion.md](ingestion.md#org-scoping).
 
 The key is never logged. The middleware logs one thing, the error when a key
 cannot be checked, and that error does not contain the key or the header.

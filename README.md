@@ -4,8 +4,8 @@ LLM usage metering and cost attribution service in Go, being built into a hosted
 teams selling AI features bill their own customers for LLM usage.
 
 > **Status:** work in progress. Ingestion, dedupe, hourly rollups and the rating library (per-model
-> rates, volume tiers, discounts) work today. The ingest API requires a scoped API key, but events
-> are not stored per org yet. Per-org data, the capture proxy, the query and cost API and the
+> rates, volume tiers, discounts) work today. The ingest API requires a scoped API key and stores
+> events per org. Per-org rollups, the capture proxy, the query and cost API and the
 > dashboard are planned (see [What I'd do next](#what-id-do-next) and
 > [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -18,7 +18,7 @@ and real contracts add volume tiers and discounts. Naive counters drift under al
 billing number that cannot be reproduced cannot be trusted.
 
 This service ingests LLM call events (tenant, model, tokens, latency), de-duplicates them on
-`event_id`, and aggregates them into hourly per-tenant, per-model rollups. Every rollup is recomputed
+`event_id` within each org, and aggregates them into hourly per-tenant, per-model rollups. Every rollup is recomputed
 from the raw events, so it is idempotent and repairable. Rating (per-model rates, tiers, discounts)
 prices those rollups. A query API for usage, cost, revenue and margin, a proxy that captures usage
 from real LLM calls, and a dashboard are planned on top.
@@ -77,7 +77,7 @@ Other commands: `make test` (integration tests use testcontainers and skip witho
 flowchart LR
     X[Capture proxy, customer-run] -.->|planned| I
     C[Clients] -->|POST /v1/events| I[Ingest API]
-    I -->|INSERT ON CONFLICT DO NOTHING| E[(events)]
+    I -->|INSERT ON CONFLICT DO NOTHING, per org| E[(events)]
     E -->|recompute per hour| R[Rollup]
     S[Scheduler / startup scan / backfill CLI] --> R
     R -->|upsert| H[(hourly_usage)]
@@ -104,9 +104,9 @@ service. The full component design, with all ten components, is in
 
 ## Design decisions and tradeoffs
 
-- **Idempotency on `event_id`, enforced by the database.** A single
-  `INSERT ... ON CONFLICT (event_id) DO NOTHING` makes concurrent retries produce exactly one
-  insert, with no application-level locking. A re-sent event with an identical payload returns
+- **Idempotency on `(org_id, event_id)`, enforced by the database.** A single
+  `INSERT ... ON CONFLICT (org_id, event_id) DO NOTHING` makes concurrent retries produce exactly
+  one insert, with no application-level locking. A re-sent event with an identical payload returns
   `200`. The same `event_id` with different content returns `409`, so a client bug cannot silently
   rewrite history. Delivery is at-least-once and the effect is exactly-once.
 - **Rollups are recomputed, not incremented.** Each hour's row is a pure function of the raw
@@ -122,6 +122,9 @@ service. The full component design, with all ten components, is in
   quickstart one step shorter but would not demonstrate the concurrency behavior.
 - **`net/http` over chi.** Two routes and one middleware do not need a router dependency. Revisit
   when the query API adds path parameters and route groups.
+- **The org comes from the API key, never from the payload.** `event_id` is unique per org, so two
+  orgs can reuse an id without seeing or conflicting with each other, and a client cannot write
+  into another org by naming it in the request.
 - **API keys checked on every request, with no cache.** One indexed lookup per request means a
   revoked key stops working immediately. Unknown and revoked keys get the same `401`, and a failed
   check refuses the request instead of letting it through.
