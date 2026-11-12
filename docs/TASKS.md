@@ -24,7 +24,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 
 ### Milestone 1: multi-tenant core (C2, C3, C4)
 
-- [ ] **Storage: orgs and API keys tables.** Migration and sqlc queries for
+- [~] (PR #11) **Storage: orgs and API keys tables.** Migration and sqlc queries for
   `orgs(id, name, created_at)` and `api_keys(id, org_id, key_hash, prefix,
   scope, created_at, revoked_at)`. `scope` is `ingest` or `read`. Unique index
   on `key_hash`. Integration test against Postgres.
