@@ -89,3 +89,11 @@ follow-up task instead of rewriting silently.
 - **Options:** keep `llm-usage-meter` and `lum_` (no work, generic name) / pick a product name before the API key task ships (keys carry the brand from day one, needs a decision now)
 - **Default applied:** Working name `llm-usage-meter`, key prefix `lum_`. Signup and email copy read the name from config so a rename touches one place.
 - **Answer:**
+
+### Q10: How do provider totals reach the reconciliation report?
+- **Status:** open
+- **Blocks:** nothing (default applied)
+- **Context:** Reconciliation compares metered usage with what the provider says it served. The service must not hold provider keys (Q3).
+- **Options:** the org uploads the provider's usage export file (no credentials stored, a manual step each month) / the org gives the service a provider admin key and totals are pulled automatically (no manual step, the service stores a sensitive credential)
+- **Default applied:** File upload.
+- **Answer:**

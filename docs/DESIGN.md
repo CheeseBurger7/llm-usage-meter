@@ -63,6 +63,9 @@ environment.
   fail an LLM call. Build the proxy first, because one Go build serves every language.
 - **Risk:** streamed responses report usage in the event stream, so the proxy must read it without
   buffering.
+- **Trust:** the org runs the proxy and holds the ingest key, so the numbers are org-reported. A monthly
+  reconciliation against the provider's own usage report shows any gap, whether from calls that bypassed
+  the proxy or from wrong events.
 
 ### C3 Identity and API keys (`internal/auth`)
 

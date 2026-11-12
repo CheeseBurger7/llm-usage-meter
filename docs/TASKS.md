@@ -159,6 +159,13 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   statements close --org --month`.
 - [ ] **Statements: CSV export.** `GET /v1/statements/{id}.csv` and a
   dashboard download link.
+- [ ] **Reconciliation report.** The org uploads its provider's usage
+  export for a month (Q10). Compare metered tokens per provider and model
+  with the provider's totals and show the difference, absolute and percent,
+  on a dashboard page and at `GET /v1/reconciliation?month`. Flag a
+  difference above a configurable threshold. Start with one provider.
+  Verify the export format against the current provider docs; never invent
+  it. No provider key is stored.
 - [ ] **Stripe usage export.** Push closed statement totals to Stripe.
   Blocked by Q8.
 
