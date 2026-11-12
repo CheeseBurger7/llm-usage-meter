@@ -2,8 +2,9 @@
 
 An org is one paying customer. Every other table will be scoped to an org, and
 an API key is how a request proves which org it belongs to. This page covers
-the tables and queries only; key generation, verification and the HTTP
-middleware are separate tasks in [TASKS.md](TASKS.md).
+the tables and queries only. Key generation, verification and the admin
+commands are in [api-keys.md](api-keys.md); the HTTP middleware is a separate
+task in [TASKS.md](TASKS.md).
 
 ## Tables
 

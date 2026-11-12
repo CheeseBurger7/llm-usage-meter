@@ -22,6 +22,15 @@ import (
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	// Admin commands print their result to stdout and errors to stderr as plain
+	// text; they never use the JSON logger, so a new key cannot end up in logs.
+	if len(os.Args) > 1 && isAdminCommand(os.Args[1]) {
+		if err := adminMain(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	run := serve
 	if len(os.Args) > 1 && os.Args[1] == "backfill" {
 		run = backfill
