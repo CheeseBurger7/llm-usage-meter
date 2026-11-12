@@ -44,7 +44,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   same `event_id` in two orgs must not conflict (integration test). No
   production data exists, so one breaking migration is fine. Update
   docs/ingestion.md.
-- [ ] **Events: richer usage fields.** Add `provider` (required),
+- [~] (PR #15) **Events: richer usage fields.** Add `provider` (required),
   `cache_read_tokens` and `cache_write_tokens` (default 0, must be >= 0), and
   `feature` (optional, at most 256 bytes). Include all of them in `sameAs` so
   the 409 rule still holds. Validation tests.
