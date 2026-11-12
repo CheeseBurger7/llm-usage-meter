@@ -90,7 +90,7 @@ func newOrgStore(t *testing.T, pool *pgxpool.Pool) orgStore {
 func addEvent(t *testing.T, s orgStore, id, tenant, model string, at time.Time, in, out, lat int64) {
 	t.Helper()
 	_, err := s.Ingest(context.Background(), s.org, ingest.Event{
-		EventID: id, TenantID: tenant, Model: model,
+		EventID: id, TenantID: tenant, Provider: "anthropic", Model: model,
 		InputTokens: in, OutputTokens: out, LatencyMs: lat, Timestamp: at,
 	})
 	if err != nil {

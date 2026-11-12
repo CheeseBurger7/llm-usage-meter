@@ -45,14 +45,18 @@ func (s *Store) Ingest(ctx context.Context, org auth.OrgID, ev Event) (Result, e
 	orgID := pgtype.UUID{Bytes: org, Valid: true}
 
 	_, err := s.q.InsertEvent(ctx, gen.InsertEventParams{
-		OrgID:        orgID,
-		EventID:      ev.EventID,
-		TenantID:     ev.TenantID,
-		Model:        ev.Model,
-		InputTokens:  ev.InputTokens,
-		OutputTokens: ev.OutputTokens,
-		LatencyMs:    ev.LatencyMs,
-		EventTime:    pgtype.Timestamptz{Time: ev.Timestamp, Valid: true},
+		OrgID:            orgID,
+		EventID:          ev.EventID,
+		TenantID:         ev.TenantID,
+		Provider:         ev.Provider,
+		Model:            ev.Model,
+		Feature:          ev.Feature,
+		InputTokens:      ev.InputTokens,
+		OutputTokens:     ev.OutputTokens,
+		CacheReadTokens:  ev.CacheReadTokens,
+		CacheWriteTokens: ev.CacheWriteTokens,
+		LatencyMs:        ev.LatencyMs,
+		EventTime:        pgtype.Timestamptz{Time: ev.Timestamp, Valid: true},
 	})
 	if err == nil {
 		return Created, nil
@@ -68,13 +72,17 @@ func (s *Store) Ingest(ctx context.Context, org auth.OrgID, ev Event) (Result, e
 		return 0, fmt.Errorf("load existing event: %w", err)
 	}
 	stored := Event{
-		EventID:      existing.EventID,
-		TenantID:     existing.TenantID,
-		Model:        existing.Model,
-		InputTokens:  existing.InputTokens,
-		OutputTokens: existing.OutputTokens,
-		LatencyMs:    existing.LatencyMs,
-		Timestamp:    existing.EventTime.Time.UTC(),
+		EventID:          existing.EventID,
+		TenantID:         existing.TenantID,
+		Provider:         existing.Provider,
+		Model:            existing.Model,
+		Feature:          existing.Feature,
+		InputTokens:      existing.InputTokens,
+		OutputTokens:     existing.OutputTokens,
+		CacheReadTokens:  existing.CacheReadTokens,
+		CacheWriteTokens: existing.CacheWriteTokens,
+		LatencyMs:        existing.LatencyMs,
+		Timestamp:        existing.EventTime.Time.UTC(),
 	}
 	if !stored.sameAs(ev) {
 		return 0, ErrConflict

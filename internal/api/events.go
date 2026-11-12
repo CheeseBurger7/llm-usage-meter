@@ -22,13 +22,17 @@ type Ingester interface {
 }
 
 type eventRequest struct {
-	EventID      string    `json:"event_id"`
-	TenantID     string    `json:"tenant_id"`
-	Model        string    `json:"model"`
-	InputTokens  int64     `json:"input_tokens"`
-	OutputTokens int64     `json:"output_tokens"`
-	LatencyMs    int64     `json:"latency_ms"`
-	Timestamp    time.Time `json:"timestamp"`
+	EventID          string    `json:"event_id"`
+	TenantID         string    `json:"tenant_id"`
+	Provider         string    `json:"provider"`
+	Model            string    `json:"model"`
+	Feature          string    `json:"feature"`
+	InputTokens      int64     `json:"input_tokens"`
+	OutputTokens     int64     `json:"output_tokens"`
+	CacheReadTokens  int64     `json:"cache_read_tokens"`
+	CacheWriteTokens int64     `json:"cache_write_tokens"`
+	LatencyMs        int64     `json:"latency_ms"`
+	Timestamp        time.Time `json:"timestamp"`
 }
 
 type errorResponse struct {
@@ -68,13 +72,17 @@ func NewIngestHandler(store Ingester, log *slog.Logger) http.Handler {
 		}
 
 		res, err := store.Ingest(r.Context(), id.OrgID, ingest.Event{
-			EventID:      req.EventID,
-			TenantID:     req.TenantID,
-			Model:        req.Model,
-			InputTokens:  req.InputTokens,
-			OutputTokens: req.OutputTokens,
-			LatencyMs:    req.LatencyMs,
-			Timestamp:    req.Timestamp,
+			EventID:          req.EventID,
+			TenantID:         req.TenantID,
+			Provider:         req.Provider,
+			Model:            req.Model,
+			Feature:          req.Feature,
+			InputTokens:      req.InputTokens,
+			OutputTokens:     req.OutputTokens,
+			CacheReadTokens:  req.CacheReadTokens,
+			CacheWriteTokens: req.CacheWriteTokens,
+			LatencyMs:        req.LatencyMs,
+			Timestamp:        req.Timestamp,
 		})
 
 		var verr *ingest.ValidationError
