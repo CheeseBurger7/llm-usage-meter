@@ -43,7 +43,7 @@ KEY=$(go run ./cmd/server keys create --org "$ORG" --scope ingest)
 # 4. Send an event. Run it twice: the second call returns 200 "duplicate".
 #    Without the Authorization header the answer is 401.
 curl -i -X POST localhost:8080/v1/events -H "Authorization: Bearer $KEY" -d '{
-  "event_id": "evt-1", "tenant_id": "tenant-a", "model": "claude-sonnet",
+  "event_id": "evt-1", "tenant_id": "tenant-a", "provider": "anthropic", "model": "claude-sonnet",
   "input_tokens": 100, "output_tokens": 50, "latency_ms": 420,
   "timestamp": "2026-01-02T03:04:05Z"
 }'
