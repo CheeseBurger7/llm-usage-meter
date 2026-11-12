@@ -111,7 +111,9 @@ Postgres.
 - **Timestamps normalized to UTC and truncated to microseconds**, Postgres `timestamptz` precision.
   Otherwise a re-sent event would never compare equal to its stored copy.
 
-Non-goals for v1: authentication, multi-region, a UI beyond Grafana, real billing integrations.
+v1 left out authentication, a UI beyond Grafana and billing integrations. All three are now in scope:
+the project is becoming a hosted product (see [docs/DESIGN.md](docs/DESIGN.md)). Multi-region remains
+a non-goal.
 
 ## What I'd do next
 
