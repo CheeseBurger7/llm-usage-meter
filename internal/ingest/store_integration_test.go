@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/CheeseBurger7/llm-usage-meter/internal/ingest"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/storage"
@@ -27,8 +26,9 @@ func newStore(t *testing.T) *ingest.Store {
 		postgres.WithDatabase("meter"),
 		postgres.WithUsername("meter"),
 		postgres.WithPassword("meter"),
+		// Postgres restarts once during init; this waits for the second "ready"
+		// log line and the port, so the first connection cannot hit the restart.
 		postgres.BasicWaitStrategies(),
-		testcontainers.WithWaitStrategy(wait.ForListeningPort("5432/tcp")),
 	)
 	if err != nil {
 		t.Fatalf("start postgres: %v", err)
