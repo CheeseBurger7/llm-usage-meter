@@ -14,6 +14,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/CheeseBurger7/llm-usage-meter/internal/api"
+	"github.com/CheeseBurger7/llm-usage-meter/internal/auth"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/ingest"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/storage"
 )
@@ -48,12 +49,37 @@ func TestIngestEndpointIdempotency(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	srv := httptest.NewServer(api.NewRouter(ingest.NewStore(pool), slog.New(slog.NewTextHandler(io.Discard, nil))))
+	keys := auth.New(pool)
+	org, err := keys.CreateOrg(ctx, "Acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newKey := func(scope auth.Scope) auth.NewKey {
+		t.Helper()
+		k, err := keys.CreateKey(ctx, org.ID, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	ingestKey, readKey, revokedKey := newKey(auth.ScopeIngest), newKey(auth.ScopeRead), newKey(auth.ScopeIngest)
+	if _, err := keys.RevokeByPrefix(ctx, revokedKey.Prefix); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(api.NewRouter(ingest.NewStore(pool), keys, slog.New(slog.NewTextHandler(io.Discard, nil))))
 	t.Cleanup(srv.Close)
 
-	send := func(body string) int {
+	send := func(key, body string) int {
 		t.Helper()
-		resp, err := http.Post(srv.URL+"/v1/events", "application/json", strings.NewReader(body))
+		req, err := http.NewRequest(http.MethodPost, srv.URL+"/v1/events", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -65,16 +91,33 @@ func TestIngestEndpointIdempotency(t *testing.T) {
 
 	changed := strings.Replace(validBody, `"input_tokens":10`, `"input_tokens":11`, 1)
 	for _, step := range []struct {
-		name, body string
-		want       int
+		name, key, body string
+		want            int
 	}{
-		{"first send", validBody, http.StatusCreated},
-		{"retry", validBody, http.StatusOK},
-		{"changed payload", changed, http.StatusConflict},
-		{"invalid", `{"event_id":"e2"}`, http.StatusBadRequest},
+		// Rejected requests come first: none of them may store the event, or
+		// "first send" below would not be 201.
+		{"no key", "", validBody, http.StatusUnauthorized},
+		{"malformed key", "not-a-key", validBody, http.StatusUnauthorized},
+		// Well-formed, so it gets as far as the database lookup.
+		{"unknown key", "lum_ingest_" + strings.Repeat("0", 64), validBody, http.StatusUnauthorized},
+		{"revoked key", revokedKey.Plaintext, validBody, http.StatusUnauthorized},
+		{"read key", readKey.Plaintext, validBody, http.StatusForbidden},
+		{"first send", ingestKey.Plaintext, validBody, http.StatusCreated},
+		{"retry", ingestKey.Plaintext, validBody, http.StatusOK},
+		{"changed payload", ingestKey.Plaintext, changed, http.StatusConflict},
+		{"invalid", ingestKey.Plaintext, `{"event_id":"e2"}`, http.StatusBadRequest},
 	} {
-		if got := send(step.body); got != step.want {
+		if got := send(step.key, step.body); got != step.want {
 			t.Fatalf("%s: status = %d, want %d", step.name, got, step.want)
 		}
+	}
+
+	resp, err := http.Get(srv.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("healthz without a key: status = %d, want 200", resp.StatusCode)
 	}
 }

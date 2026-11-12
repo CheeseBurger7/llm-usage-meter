@@ -34,7 +34,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   scope, and rejects revoked keys. Add `server keys create --org --scope`,
   `server keys revoke --prefix` and `server orgs create --name` subcommands.
   The plaintext key is printed once.
-- [ ] **Auth: HTTP middleware.** `Authorization: Bearer <key>`. 401 for a
+- [~] (PR #13) **Auth: HTTP middleware.** `Authorization: Bearer <key>`. 401 for a
   missing or unknown key, 403 for the wrong scope. Puts the org ID in the
   request context. `/healthz` stays open. `POST /v1/events` requires `ingest`
   scope. Never log the key.
