@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/CheeseBurger7/llm-usage-meter/internal/auth"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/storage/gen"
 )
 
@@ -30,16 +31,21 @@ func NewStore(db gen.DBTX) *Store {
 	return &Store{q: gen.New(db)}
 }
 
-// Ingest stores the event idempotently on event_id. It returns Created for a new
-// event, Duplicate for an identical re-send, and ErrConflict when the event_id
-// exists with any different field (including timestamp).
-func (s *Store) Ingest(ctx context.Context, ev Event) (Result, error) {
+// Ingest stores the event for the org, idempotently on (org, event_id). It
+// returns Created for a new event, Duplicate for an identical re-send, and
+// ErrConflict when the org already has that event_id with any different field
+// (including timestamp). Another org's events are never read or compared.
+//
+// The org must come from the verified API key, never from the request payload.
+func (s *Store) Ingest(ctx context.Context, org auth.OrgID, ev Event) (Result, error) {
 	if err := ev.Validate(); err != nil {
 		return 0, err
 	}
 	ev = ev.normalized()
+	orgID := pgtype.UUID{Bytes: org, Valid: true}
 
 	_, err := s.q.InsertEvent(ctx, gen.InsertEventParams{
+		OrgID:        orgID,
 		EventID:      ev.EventID,
 		TenantID:     ev.TenantID,
 		Model:        ev.Model,
@@ -57,7 +63,7 @@ func (s *Store) Ingest(ctx context.Context, ev Event) (Result, error) {
 
 	// ON CONFLICT DO NOTHING waits for a concurrent inserter to commit, so the
 	// winning row is visible to this read.
-	existing, err := s.q.GetEvent(ctx, ev.EventID)
+	existing, err := s.q.GetEvent(ctx, gen.GetEventParams{OrgID: orgID, EventID: ev.EventID})
 	if err != nil {
 		return 0, fmt.Errorf("load existing event: %w", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	"github.com/CheeseBurger7/llm-usage-meter/internal/auth"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/ingest"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/rollup"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/storage"
@@ -66,9 +67,29 @@ func usageFor(t *testing.T, pool *pgxpool.Pool, tenant, model string, hour time.
 	return u, err == nil
 }
 
-func addEvent(t *testing.T, s *ingest.Store, id, tenant, model string, at time.Time, in, out, lat int64) {
+// newOrg creates the org that a test's events are stored under.
+func newOrg(t *testing.T, pool *pgxpool.Pool) auth.OrgID {
 	t.Helper()
-	_, err := s.Ingest(context.Background(), ingest.Event{
+	org, err := auth.New(pool).CreateOrg(context.Background(), "Acme")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	return org.ID
+}
+
+// orgStore ingests every event under one org.
+type orgStore struct {
+	*ingest.Store
+	org auth.OrgID
+}
+
+func newOrgStore(t *testing.T, pool *pgxpool.Pool) orgStore {
+	return orgStore{Store: ingest.NewStore(pool), org: newOrg(t, pool)}
+}
+
+func addEvent(t *testing.T, s orgStore, id, tenant, model string, at time.Time, in, out, lat int64) {
+	t.Helper()
+	_, err := s.Ingest(context.Background(), s.org, ingest.Event{
 		EventID: id, TenantID: tenant, Model: model,
 		InputTokens: in, OutputTokens: out, LatencyMs: lat, Timestamp: at,
 	})
@@ -80,7 +101,7 @@ func addEvent(t *testing.T, s *ingest.Store, id, tenant, model string, at time.T
 func TestRollupIsIdempotentAndPicksUpLateEvents(t *testing.T) {
 	ctx := context.Background()
 	pool := newPool(t)
-	store := ingest.NewStore(pool)
+	store := newOrgStore(t, pool)
 	roller := rollup.New(pool, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	h10 := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
@@ -117,7 +138,7 @@ func TestRollupIsIdempotentAndPicksUpLateEvents(t *testing.T) {
 func TestBackfillStaleFillsMissingAndOutdatedHours(t *testing.T) {
 	ctx := context.Background()
 	pool := newPool(t)
-	store := ingest.NewStore(pool)
+	store := newOrgStore(t, pool)
 	roller := rollup.New(pool, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)

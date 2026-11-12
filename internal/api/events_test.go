@@ -11,19 +11,27 @@ import (
 	"testing"
 
 	"github.com/CheeseBurger7/llm-usage-meter/internal/api"
+	"github.com/CheeseBurger7/llm-usage-meter/internal/auth"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/ingest"
 )
 
 type fakeIngester struct {
-	res ingest.Result
-	err error
-	got ingest.Event
+	res    ingest.Result
+	err    error
+	got    ingest.Event
+	gotOrg auth.OrgID
+	calls  int
 }
 
-func (f *fakeIngester) Ingest(_ context.Context, ev ingest.Event) (ingest.Result, error) {
+func (f *fakeIngester) Ingest(_ context.Context, org auth.OrgID, ev ingest.Event) (ingest.Result, error) {
+	f.calls++
+	f.gotOrg = org
 	f.got = ev
 	return f.res, f.err
 }
+
+// testOrg is the org of the identity that post puts in the request context.
+var testOrg = auth.OrgID{0xA1}
 
 const validBody = `{"event_id":"e1","tenant_id":"t1","model":"m","input_tokens":10,"output_tokens":5,"latency_ms":120,"timestamp":"2026-01-02T03:04:05Z"}`
 
@@ -31,7 +39,9 @@ func post(t *testing.T, f *fakeIngester, body string) *httptest.ResponseRecorder
 	t.Helper()
 	h := api.NewIngestHandler(f, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/events", strings.NewReader(body)))
+	req := httptest.NewRequest(http.MethodPost, "/v1/events", strings.NewReader(body))
+	ctx := auth.WithIdentity(req.Context(), auth.Identity{OrgID: testOrg, Scope: auth.ScopeIngest})
+	h.ServeHTTP(rec, req.WithContext(ctx))
 	return rec
 }
 
@@ -67,6 +77,40 @@ func TestIngestHandlerMapsFields(t *testing.T) {
 	want := ingest.Event{EventID: "e1", TenantID: "t1", Model: "m", InputTokens: 10, OutputTokens: 5, LatencyMs: 120, Timestamp: f.got.Timestamp}
 	if f.got != want || f.got.Timestamp.Year() != 2026 {
 		t.Fatalf("got %+v", f.got)
+	}
+}
+
+func TestIngestHandlerTakesOrgFromContext(t *testing.T) {
+	f := &fakeIngester{res: ingest.Created}
+	post(t, f, validBody)
+	if f.gotOrg != testOrg {
+		t.Fatalf("org = %s, want %s", f.gotOrg, testOrg)
+	}
+}
+
+// The payload cannot name an org: the field is unknown and the request is rejected.
+func TestIngestHandlerRejectsOrgInPayload(t *testing.T) {
+	f := &fakeIngester{res: ingest.Created}
+	body := strings.Replace(validBody, `{`, `{"org_id":"00000000-0000-0000-0000-000000000001",`, 1)
+	if got := post(t, f, body).Code; got != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", got)
+	}
+	if f.calls != 0 {
+		t.Fatal("store was called")
+	}
+}
+
+// Without the auth middleware there is no org, so nothing may be stored.
+func TestIngestHandlerWithoutIdentity(t *testing.T) {
+	f := &fakeIngester{res: ingest.Created}
+	h := api.NewIngestHandler(f, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/events", strings.NewReader(validBody)))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	if f.calls != 0 {
+		t.Fatal("store was called")
 	}
 }
 

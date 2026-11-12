@@ -112,6 +112,34 @@ func TestIngestEndpointIdempotency(t *testing.T) {
 		}
 	}
 
+	// A second org reuses the event_id with a different payload. In the first
+	// org that was a 409; here it is a new event, stored under the key's org.
+	globex, err := keys.CreateOrg(ctx, "Globex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	globexKey, err := keys.CreateKey(ctx, globex.ID, auth.ScopeIngest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := send(globexKey.Plaintext, changed); got != http.StatusCreated {
+		t.Fatalf("second org, same event_id: status = %d, want 201", got)
+	}
+	if got := send(globexKey.Plaintext, changed); got != http.StatusOK {
+		t.Fatalf("second org retry: status = %d, want 200", got)
+	}
+	for _, want := range []struct {
+		org   auth.OrgID
+		input int64
+	}{{org.ID, 10}, {globex.ID, 11}} {
+		var input int64
+		err := pool.QueryRow(ctx, `SELECT input_tokens FROM events WHERE org_id = $1 AND event_id = 'e1'`,
+			want.org.String()).Scan(&input)
+		if err != nil || input != want.input {
+			t.Fatalf("org %s: input_tokens = %d, %v; want %d", want.org, input, err, want.input)
+		}
+	}
+
 	resp, err := http.Get(srv.URL + "/healthz")
 	if err != nil {
 		t.Fatal(err)

@@ -27,8 +27,8 @@ func (f fakeKeys) Verify(_ context.Context, key string) (auth.Identity, error) {
 
 func TestRouterAuth(t *testing.T) {
 	keys := fakeKeys{
-		"ingest-key": {OrgID: auth.OrgID{1}, Scope: auth.ScopeIngest},
-		"read-key":   {OrgID: auth.OrgID{1}, Scope: auth.ScopeRead},
+		"ingest-key": {OrgID: testOrg, Scope: auth.ScopeIngest},
+		"read-key":   {OrgID: testOrg, Scope: auth.ScopeRead},
 	}
 	tests := []struct {
 		name, method, path, key string
@@ -43,7 +43,7 @@ func TestRouterAuth(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &countingIngester{}
+			store := &fakeIngester{res: ingest.Created}
 			h := api.NewRouter(store, keys, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(validBody))
 			if tt.key != "" {
@@ -58,13 +58,10 @@ func TestRouterAuth(t *testing.T) {
 			if (store.calls > 0) != tt.wantIngest {
 				t.Fatalf("store calls = %d, want ingest = %v", store.calls, tt.wantIngest)
 			}
+			// The event is stored under the org of the key.
+			if tt.wantIngest && store.gotOrg != testOrg {
+				t.Fatalf("org = %s, want %s", store.gotOrg, testOrg)
+			}
 		})
 	}
-}
-
-type countingIngester struct{ calls int }
-
-func (c *countingIngester) Ingest(context.Context, ingest.Event) (ingest.Result, error) {
-	c.calls++
-	return ingest.Created, nil
 }
