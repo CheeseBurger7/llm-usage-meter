@@ -4,9 +4,9 @@ LLM usage metering and cost attribution service in Go, being built into a hosted
 teams selling AI features bill their own customers for LLM usage.
 
 > **Status:** work in progress. Ingestion, dedupe, hourly rollups and the rating library (per-model
-> rates, volume tiers, discounts) work today. Orgs and API keys can be created and verified, but the
-> API does not enforce them yet. Request authentication and per-org data, the capture proxy, the
-> query and cost API and the dashboard are planned (see [What I'd do next](#what-id-do-next) and
+> rates, volume tiers, discounts) work today. The ingest API requires a scoped API key, but events
+> are not stored per org yet. Per-org data, the capture proxy, the query and cost API and the
+> dashboard are planned (see [What I'd do next](#what-id-do-next) and
 > [docs/DESIGN.md](docs/DESIGN.md)).
 
 ## Problem
@@ -36,14 +36,19 @@ docker run -d --name meter-pg -p 5432:5432 \
 export DATABASE_URL='postgres://postgres:meter@localhost:5432/meter?sslmode=disable'
 make run
 
-# 3. Send an event (in another terminal). Run it twice: the second call returns 200 "duplicate".
-curl -i -X POST localhost:8080/v1/events -d '{
+# 3. In another terminal, with the same DATABASE_URL: create an org and an ingest key
+ORG=$(go run ./cmd/server orgs create --name "Acme")
+KEY=$(go run ./cmd/server keys create --org "$ORG" --scope ingest)
+
+# 4. Send an event. Run it twice: the second call returns 200 "duplicate".
+#    Without the Authorization header the answer is 401.
+curl -i -X POST localhost:8080/v1/events -H "Authorization: Bearer $KEY" -d '{
   "event_id": "evt-1", "tenant_id": "tenant-a", "model": "claude-sonnet",
   "input_tokens": 100, "output_tokens": 50, "latency_ms": 420,
   "timestamp": "2026-01-02T03:04:05Z"
 }'
 
-# 4. Inspect the hourly rollup (the scheduler runs every ROLLUP_INTERVAL, default 1m)
+# 5. Inspect the hourly rollup (the scheduler runs every ROLLUP_INTERVAL, default 1m)
 docker exec meter-pg psql -U postgres meter -c 'SELECT * FROM hourly_usage'
 ```
 
@@ -95,6 +100,7 @@ service. The full component design, with all ten components, is in
 | Schema, migrations, sqlc queries | `internal/storage` | [docs/ingestion.md](docs/ingestion.md#schema-and-queries) |
 | Orgs and API keys tables | `internal/storage` | [docs/orgs-and-keys.md](docs/orgs-and-keys.md) |
 | API key generation, verification, admin commands | `internal/auth`, `cmd/server` | [docs/api-keys.md](docs/api-keys.md) |
+| HTTP authentication middleware | `internal/auth`, `internal/api` | [docs/api-keys.md](docs/api-keys.md#http-authentication) |
 
 ## Design decisions and tradeoffs
 
@@ -114,8 +120,11 @@ service. The full component design, with all ten components, is in
 - **Postgres over SQLite.** `ON CONFLICT`, `timestamptz` and real concurrency are what the dedupe
   story relies on, and it matches what a production deployment would use. SQLite would make the
   quickstart one step shorter but would not demonstrate the concurrency behavior.
-- **`net/http` over chi.** One route does not need a router dependency. Revisit when the query API
-  adds path parameters and middleware.
+- **`net/http` over chi.** Two routes and one middleware do not need a router dependency. Revisit
+  when the query API adds path parameters and route groups.
+- **API keys checked on every request, with no cache.** One indexed lookup per request means a
+  revoked key stops working immediately. Unknown and revoked keys get the same `401`, and a failed
+  check refuses the request instead of letting it through.
 - **sqlc over an ORM.** Queries stay plain SQL, checked against the migrations at generate time,
   with typed Go output and no runtime reflection.
 - **Latency stored as sum and max.** Rows stay mergeable across hours. Percentiles are out of scope
