@@ -8,6 +8,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ApiKey struct {
+	ID        pgtype.UUID
+	OrgID     pgtype.UUID
+	KeyHash   []byte
+	Prefix    string
+	Scope     string
+	CreatedAt pgtype.Timestamptz
+	RevokedAt pgtype.Timestamptz
+}
+
 type Event struct {
 	EventID      string
 	TenantID     string
@@ -30,4 +40,10 @@ type HourlyUsage struct {
 	LatencyMsMax     int64
 	SourceIngestedAt pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
+}
+
+type Org struct {
+	ID        pgtype.UUID
+	Name      string
+	CreatedAt pgtype.Timestamptz
 }
