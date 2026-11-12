@@ -12,7 +12,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 
 ## Owner actions (not for the agent)
 
-- Answer Q3 to Q9 in OPEN_QUESTIONS.md, or accept the defaults.
+- Answer Q4 to Q10 in OPEN_QUESTIONS.md, or accept the defaults.
 
 ## Done
 

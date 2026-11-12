@@ -35,12 +35,12 @@ follow-up task instead of rewriting silently.
 - **Answer:** Tenants are billed per calendar month. Volume tiers reset at the start of each month in UTC, per tenant and model, and statements cover the same month.
 
 ### Q3: Where does usage capture run?
-- **Status:** open
+- **Status:** answered
 - **Blocks:** nothing (default applied)
 - **Context:** The proxy and SDK tasks need to know whether LLM traffic passes through the hosted service.
 - **Options:** customer-run proxy and client library that send token counts and tags only (no prompts or provider keys reach the service, no added latency or outage risk, customer deploys one container) / hosted proxy (nothing to deploy, but the service sees prompts and keys and becomes a point of failure for every LLM call)
 - **Default applied:** Customer-run. The proxy is shipped as a container the customer runs next to their app.
-- **Answer:**
+- **Answer:** Customer-run, as the default. The org reports its own numbers, so they are checked by reconciliation against the provider's usage report (see the reconciliation task), not by hosting the proxy.
 
 ### Q4: Dashboard stack
 - **Status:** open
