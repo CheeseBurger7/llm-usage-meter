@@ -207,6 +207,9 @@ milestone 4.
 | 5 Alerts and export | C7, C9 | A budget alert fires once and a month closes to a CSV statement |
 | 6 Platform ops | C10 | Metrics, backups with a tested restore, quotas and retention are in place |
 
+Milestone 1's "done when" is checked by `TestTwoOrgIsolation` in
+`internal/api/isolation_integration_test.go`.
+
 Backups and the Docker image sit in milestone 6 in the backlog, but pull them forward to before the
 first real customer sends data.
 

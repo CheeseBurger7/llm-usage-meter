@@ -48,6 +48,9 @@ large `events` table that first startup scan re-rolls every hour that has events
   the same `event_id`, tenant, provider, model and feature get separate rows; provider and feature
   each split a row; cache tokens are summed; a new event in one org makes the hour stale without
   changing the other org's numbers.
+- `internal/api/isolation_integration_test.go`: the milestone 1 acceptance test. Events ingested
+  over HTTP by two orgs are rolled up with `BackfillStale`, and each org's `hourly_usage` rows
+  hold only its own totals.
 - `internal/storage/migrate_integration_test.go`: migration 6 applied to a database that already
   has an event and a rollup row, the new key accepts and rejects the right rows, then down and up
   again.
