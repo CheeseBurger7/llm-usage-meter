@@ -179,8 +179,13 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   difference above a configurable threshold. Start with one provider.
   Verify the export format against the current provider docs; never invent
   it. No provider key is stored.
-- [ ] **Stripe usage export.** Push closed statement totals to Stripe.
-  Blocked by Q8.
+- [ ] **Stripe usage export.** Push each closed statement line as an invoice
+  item to the org's own Stripe account, connected through Stripe Connect
+  (Standard accounts, OAuth; only the connected account id is stored) (Q8).
+  The org maps each `tenant_id` to a Stripe customer id. Idempotency key per
+  statement line, so retries never duplicate an item. Adjustment lines go out
+  with the next statement. Test mode only until the owner supplies the
+  platform key and Connect client id; never invent accounts or endpoints.
 
 ### Milestone 6: platform ops (C10)
 

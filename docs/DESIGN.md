@@ -111,9 +111,11 @@ environment.
 
 - **Purpose:** turn metered usage into something a finance person can invoice from.
 - **Interface:** a monthly statement per tenant with one line per model, exported as CSV first and
-  pushed to Stripe second.
+  pushed to Stripe second, as invoice items on the org's own Stripe account (Q8).
 - **Decisions:** a closed statement is a frozen snapshot. Late events become an adjustment line on the
-  next statement, so an issued invoice never changes.
+  next statement, so an issued invoice never changes. Stripe receives rated amounts, not quantities, so
+  our price books stay the only place prices are computed. Orgs connect through Stripe Connect Standard
+  accounts; we hold the connected account id, not a secret key.
 
 ### C10 Platform ops
 
@@ -172,7 +174,7 @@ Four flows cover the product; each ends in something the customer can check.
 **Invoice export**
 
 1. At month end, a statement is closed per tenant from the rated rollups.
-2. The statement is exported as CSV or pushed to Stripe.
+2. The statement is exported as CSV or pushed to the org's Stripe account as invoice items.
 3. Events that arrive later for a closed month become an adjustment on the next statement.
 
 ## Hosting and monthly cost
@@ -216,7 +218,7 @@ decides whether milestones 3 to 5 keep this order.
 ## Open decisions
 
 Tracked in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). Q2 to Q6 and Q9 have a default so the daily agent is
-not blocked; Q8 blocks its task until answered.
+not blocked.
 
 | # | Decision | Recommended default |
 |---|---|---|
@@ -226,7 +228,7 @@ not blocked; Q8 blocks its task until answered.
 | Q5 | Dashboard login | Answered: Google and GitHub OAuth, no hosted auth vendor |
 | Q6 | Licence and what stays public | Answered: everything stays public under Apache 2.0; the hosted service is the product |
 | Q7 | Raw event retention | Answered: raw events dropped by monthly partition 180 days after a closed month; rollups and statements kept; backups kept 360 days |
-| Q8 | Stripe account and export shape | No default; blocks the Stripe export task |
+| Q8 | Stripe account and export shape | Answered: rated amounts as invoice items on the org's own Stripe account, connected through Stripe Connect Standard |
 | Q9 | Product name and domain | Needed before signup ships |
 
 Q1 (money representation) is settled in code: `internal/pricing/rate.go` converts rates to integer
