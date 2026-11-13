@@ -67,12 +67,12 @@ follow-up task instead of rewriting silently.
 - **Answer:** Everything stays public in this repo under Apache 2.0. The hosted service is the product: customers pay for operation, upgrades and backups, not for access to the code. Public code is what lets employers judge the engineering and lets buyers audit how their bill is computed. Secrets, customer data and the hosted deployment's environment-specific configuration never go in the repo. Revisit when there are paying customers or when someone else hosts the code commercially; the options then are to keep new paid features in a private repo or to change the licence for future versions. Code already released stays Apache 2.0. To keep that second option open, outside contributions need a contributor agreement before they are merged.
 
 ### Q7: Raw event retention
-- **Status:** open
+- **Status:** answered
 - **Blocks:** Raw event retention
 - **Context:** Rollups are recomputed from raw events, so deleting events removes the ability to repair old hours.
 - **Options:** keep forever (always repairable, storage grows without bound) / delete after N days once the month's statement is closed (bounded storage, closed months are frozen by their statement)
 - **Default applied:** None. The retention task waits for an answer.
-- **Answer:**
+- **Answer:** Delete raw events 180 days after the end of their month, and only once every tenant's statement for that month is closed. 180 days covers card dispute windows (up to about 120 days) and late questions about a bill, with two full billing cycles still repairable. Retention applies to `events` only: `hourly_usage`, `statements` and `statement_lines` are kept for the life of the org, because they are the audit record once raw events are gone. Account data (`orgs`, `users`, `api_keys`, price books, budgets) is removed when an account is deleted, not by age. Implement it by range-partitioning `events` by month and dropping whole partitions, not with `DELETE` plus `VACUUM`, which churns WAL and leaves bloat that only a locking `VACUUM FULL` returns. A partitioned table's primary key must include the partition column, so keeping dedupe on `(org_id, event_id)` across months needs its own task. Rollup recompute and backfill skip purged months. Backups are kept for 360 days, so a purged event can survive in a backup for up to 360 days after it was dropped; the retention docs must say so.
 
 ### Q8: Stripe account and export shape
 - **Status:** open

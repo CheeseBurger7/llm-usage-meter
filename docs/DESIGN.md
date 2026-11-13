@@ -216,7 +216,7 @@ decides whether milestones 3 to 5 keep this order.
 ## Open decisions
 
 Tracked in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). Q2 to Q6 and Q9 have a default so the daily agent is
-not blocked; Q7 and Q8 block their tasks until answered.
+not blocked; Q8 blocks its task until answered.
 
 | # | Decision | Recommended default |
 |---|---|---|
@@ -225,7 +225,7 @@ not blocked; Q7 and Q8 block their tasks until answered.
 | Q4 | Dashboard stack | Answered: server-rendered Go templates in the binary, plus a vendored chart library for time-series views |
 | Q5 | Dashboard login | Answered: Google and GitHub OAuth, no hosted auth vendor |
 | Q6 | Licence and what stays public | Answered: everything stays public under Apache 2.0; the hosted service is the product |
-| Q7 | Raw event retention | No default; blocks the retention task |
+| Q7 | Raw event retention | Answered: raw events dropped by monthly partition 180 days after a closed month; rollups and statements kept; backups kept 360 days |
 | Q8 | Stripe account and export shape | No default; blocks the Stripe export task |
 | Q9 | Product name and domain | Needed before signup ships |
 
