@@ -1,4 +1,5 @@
-// Package rollup aggregates events into hourly usage rows.
+// Package rollup aggregates events into hourly usage rows, one per org, tenant,
+// provider, model, feature and hour.
 //
 // Every rollup row is recomputed from the raw events table, never incremented,
 // so running a window twice yields the same rows and backfill is always safe.
