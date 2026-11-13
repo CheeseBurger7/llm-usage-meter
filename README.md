@@ -151,7 +151,7 @@ Six milestones, in order. The product is sellable at the end of the fourth. The 
    token usage from Anthropic and OpenAI-compatible responses, streaming included, and fails open.
 3. **Read side:** versioned cost and price books per org, and `GET /v1/usage` and `GET /v1/cost`
    returning cost, revenue and margin. Volume tiers apply per calendar month.
-4. **Dashboard:** email magic-link login, overview, tenants, API keys, price books and signup,
+4. **Dashboard:** Google and GitHub sign-in, overview, tenants, API keys, price books and signup,
    server-rendered from the same binary.
 5. **Alerts and export:** budgets with signed webhook and email alerts, frozen monthly statements
    with CSV export, reconciliation against the provider's usage report, and a Stripe export.

@@ -73,7 +73,7 @@ environment.
 - **Interface:** `Authorization: Bearer lum_<scope>_<random>`. Scopes are `ingest` (write only, safe to
   deploy with the proxy) and `read`.
 - **Decisions:** store only the SHA-256 hash and a short prefix. Middleware resolves the org and every
-  query filters by it. Dashboard users sign in by email magic link; keys are for machines only.
+  query filters by it. Dashboard users sign in with Google or GitHub (OAuth); keys are for machines only.
 
 ### C5 Price book (extends `internal/pricing`)
 
@@ -134,7 +134,8 @@ be one breaking migration.
 | `hourly_usage` | `(org_id, tenant_id, provider, model, feature, hour_start)` | Rollups, with sums for the cache token columns | Changed |
 | `orgs` | `id` | One row per paying customer | New |
 | `api_keys` | `id`, unique `key_hash` | Hashed keys with scope and revocation time | New |
-| `users` | `id`, unique `email` | Dashboard sign-in | New |
+| `users` | `id`, unique `email` | Dashboard users | New |
+| `user_identities` | `(provider, subject)` | Links a user to a Google or GitHub account | New |
 | `price_book_versions` | `id`; lookup by `(org_id, kind, effective_from)` | Cost and price books as dated versions | New |
 | `budgets` | `id` | Monthly amount and thresholds per org or tenant | New |
 | `alert_events` | `(budget_id, period, threshold)` | One row per alert fired, which stops repeats | New |
@@ -185,7 +186,7 @@ provider pricing before committing.
 | Postgres | 0 to 30 | On the same VPS at launch; managed Postgres once a customer depends on it |
 | Backup storage | 1 to 5 | S3-compatible bucket for nightly dumps |
 | Domain | 1 to 2 | Billed yearly |
-| Email | 0 | Free tier of a transactional email service covers magic links and alerts |
+| Email | 0 | Free tier of a transactional email service covers alerts. Sign-in uses Google and GitHub OAuth, which is free |
 | Uptime and error monitoring | 0 | Free tiers |
 | LLM API | 0 | The product makes no LLM calls |
 
@@ -222,7 +223,7 @@ not blocked; Q7 and Q8 block their tasks until answered.
 | Q2 | Window for volume tiers | Calendar month in UTC, per tenant and model |
 | Q3 | Where capture runs | In the customer's environment; no prompts or keys reach the service |
 | Q4 | Dashboard stack | Answered: server-rendered Go templates in the binary, plus a vendored chart library for time-series views |
-| Q5 | Dashboard login | Email magic link |
+| Q5 | Dashboard login | Answered: Google and GitHub OAuth, no hosted auth vendor |
 | Q6 | Licence and what stays public | Keep everything in the public Apache 2.0 repo for now |
 | Q7 | Raw event retention | No default; blocks the retention task |
 | Q8 | Stripe account and export shape | No default; blocks the Stripe export task |

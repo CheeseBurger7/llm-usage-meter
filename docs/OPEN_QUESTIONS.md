@@ -51,12 +51,12 @@ follow-up task instead of rewriting silently.
 - **Answer:** Keep the default: server-rendered `html/template` pages embedded in the binary. Time-series views use a small chart library vendored as a static asset (no CDN, no Node build), fed JSON by the same query functions as the API. Buyers judge the dashboard on speed and correct numbers, not its stack, and the Milestone 4 pages are tables, forms and a few charts. Revisit only if the dashboard itself becomes the differentiator, for example an embeddable customer-facing usage portal.
 
 ### Q5: Dashboard login method
-- **Status:** open
+- **Status:** answered
 - **Blocks:** nothing (default applied)
 - **Context:** Dashboard users need to sign in; API keys are for machines only.
 - **Options:** email magic link (no passwords to store, needs an email provider) / third-party OAuth sign-in (no email provider, depends on an external account)
 - **Default applied:** Email magic link behind a sender interface, with a log-only sender until an email provider is chosen.
-- **Answer:**
+- **Answer:** OAuth sign-in with Google and GitHub, using each provider's standard authorization-code flow through `golang.org/x/oauth2` directly, with no hosted auth vendor. Both providers charge nothing for sign-in, and it removes the email provider from the dashboard milestone. No magic link and no passwords. A user is matched on the provider's stable account id, and only a provider-verified email is accepted. The local demo cannot depend on OAuth credentials, so a development-only login, off by default, signs in without a provider. The email sender interface moves to the "Alerts: email delivery" task. SAML and enterprise SSO are out of scope. Owner action before the hosted launch: register an OAuth app with each provider and supply the client id and secret as environment variables.
 
 ### Q6: Licence and what stays public
 - **Status:** open
