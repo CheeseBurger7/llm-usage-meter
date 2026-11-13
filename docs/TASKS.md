@@ -12,7 +12,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 
 ## Owner actions (not for the agent)
 
-- Answer Q6 to Q10 in OPEN_QUESTIONS.md, or accept the defaults.
+- Answer Q7 to Q10 in OPEN_QUESTIONS.md, or accept the defaults.
 - Before the hosted launch: register an OAuth app with Google and with
   GitHub and supply each client id and secret as environment variables (Q5).
 

@@ -224,7 +224,7 @@ not blocked; Q7 and Q8 block their tasks until answered.
 | Q3 | Where capture runs | In the customer's environment; no prompts or keys reach the service |
 | Q4 | Dashboard stack | Answered: server-rendered Go templates in the binary, plus a vendored chart library for time-series views |
 | Q5 | Dashboard login | Answered: Google and GitHub OAuth, no hosted auth vendor |
-| Q6 | Licence and what stays public | Keep everything in the public Apache 2.0 repo for now |
+| Q6 | Licence and what stays public | Answered: everything stays public under Apache 2.0; the hosted service is the product |
 | Q7 | Raw event retention | No default; blocks the retention task |
 | Q8 | Stripe account and export shape | No default; blocks the Stripe export task |
 | Q9 | Product name and domain | Needed before signup ships |

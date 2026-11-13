@@ -59,12 +59,12 @@ follow-up task instead of rewriting silently.
 - **Answer:** OAuth sign-in with Google and GitHub, using each provider's standard authorization-code flow through `golang.org/x/oauth2` directly, with no hosted auth vendor. Both providers charge nothing for sign-in, and it removes the email provider from the dashboard milestone. No magic link and no passwords. A user is matched on the provider's stable account id, and only a provider-verified email is accepted. The local demo cannot depend on OAuth credentials, so a development-only login, off by default, signs in without a provider. The email sender interface moves to the "Alerts: email delivery" task. SAML and enterprise SSO are out of scope. Owner action before the hosted launch: register an OAuth app with each provider and supply the client id and secret as environment variables.
 
 ### Q6: Licence and what stays public
-- **Status:** open
+- **Status:** answered
 - **Blocks:** nothing (default applied)
 - **Context:** The repo is public under Apache 2.0 and is becoming a paid hosted service.
 - **Options:** everything stays public, the hosted service is the product (simple, anyone can self-host) / core stays public, dashboard, statements and billing move to a private repo (protects the paid parts, two repos to maintain)
 - **Default applied:** Everything stays in this repo for now.
-- **Answer:**
+- **Answer:** Everything stays public in this repo under Apache 2.0. The hosted service is the product: customers pay for operation, upgrades and backups, not for access to the code. Public code is what lets employers judge the engineering and lets buyers audit how their bill is computed. Secrets, customer data and the hosted deployment's environment-specific configuration never go in the repo. Revisit when there are paying customers or when someone else hosts the code commercially; the options then are to keep new paid features in a private repo or to change the licence for future versions. Code already released stays Apache 2.0. To keep that second option open, outside contributions need a contributor agreement before they are merged.
 
 ### Q7: Raw event retention
 - **Status:** open
