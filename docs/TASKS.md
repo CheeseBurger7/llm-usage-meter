@@ -48,7 +48,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   `cache_read_tokens` and `cache_write_tokens` (default 0, must be >= 0), and
   `feature` (optional, at most 256 bytes). Include all of them in `sameAs` so
   the 409 rule still holds. Validation tests.
-- [ ] **Rollups: org and new dimensions.** `hourly_usage` key becomes
+- [~] (PR #16) **Rollups: org and new dimensions.** `hourly_usage` key becomes
   `(org_id, tenant_id, provider, model, feature, hour_start)` with sums for
   the cache token columns. Update `RollupWindow` and `ListStaleHours`.
   Integration tests, update docs/rollups.md.
