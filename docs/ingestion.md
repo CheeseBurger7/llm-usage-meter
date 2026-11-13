@@ -31,8 +31,8 @@ commit, so the read sees the winning row and N concurrent retries produce exactl
   org.
 - **`events.org_id` references `orgs(id)`.** An event cannot be stored under an org that does not
   exist, and an org that has events cannot be deleted.
-- **Rollups are not per org yet.** `hourly_usage` still groups by tenant and model only. See
-  [rollups.md](rollups.md#known-limits).
+- **Rollups are per org too.** `hourly_usage` is keyed by `org_id` first. See
+  [rollups.md](rollups.md).
 
 Timestamps are normalized to UTC and truncated to microseconds, which is Postgres `timestamptz`
 precision. Otherwise a re-sent event would never compare equal to its stored copy.

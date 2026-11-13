@@ -1,7 +1,15 @@
 # Hourly rollups
 
-`hourly_usage` holds one row per `(tenant_id, model, hour_start)` with event count,
-input/output tokens, and latency sum and max. Hours are UTC.
+`hourly_usage` holds one row per `(org_id, tenant_id, provider, model, feature, hour_start)` with
+event count, input, output, cache read and cache write token sums, and latency sum and max. Hours
+are UTC.
+
+- **`org_id` leads the primary key**, so two orgs that use the same `tenant_id` and model never
+  share a row, and every per-org read is a prefix scan of the key. It references `orgs(id)`.
+- **`provider` and `feature` are dimensions**, copied from the event byte for byte (Q13). `feature`
+  is `''` when the event did not set one, because a primary key column cannot be `NULL`.
+- **The three token sums do not overlap.** `input_tokens` leaves out cache tokens (Q14), so total
+  input for a row is `input_tokens + cache_read_tokens + cache_write_tokens`.
 
 ## Recompute, not increment
 
@@ -27,9 +35,26 @@ Latency is stored as sum and max so rows stay mergeable. Percentiles are out of 
 Each hour is one atomic statement, retried up to 5 times with exponential backoff
 (200ms, doubling), so an interrupted run leaves only whole hours behind.
 
+## Migration
+
+`00006_hourly_usage_org_dimensions.sql` adds the columns and changes the primary key. It **deletes
+all rows in `hourly_usage`**, because the old rows have no org and may mix several. No usage is
+lost: `events` is untouched, and the startup scan finds every hour stale and rebuilds it. On a
+large `events` table that first startup scan re-rolls every hour that has events.
+
+## Tests
+
+- `internal/rollup/rollup_integration_test.go`: idempotent re-runs and late events; two orgs with
+  the same `event_id`, tenant, provider, model and feature get separate rows; provider and feature
+  each split a row; cache tokens are summed; a new event in one org makes the hour stale without
+  changing the other org's numbers.
+- `internal/storage/migrate_integration_test.go`: migration 6 applied to a database that already
+  has an event and a rollup row, the new key accepts and rejects the right rows, then down and up
+  again.
+
 ## Known limits
 
-- **Rollups are not per org yet.** `events` is keyed by org, but `hourly_usage` still groups by `(tenant_id, model, hour_start)`, so two orgs that use the same `tenant_id` and model share a rollup row. Nothing reads `hourly_usage` over the API yet. The fix is the "Rollups: org and new dimensions" task in [TASKS.md](TASKS.md).
-- **Rollups ignore the newer event fields.** `events` records `provider`, `feature`, `cache_read_tokens` and `cache_write_tokens`, but `hourly_usage` neither groups by the first two nor sums the last two yet. Same task as above.
+- **The rollup job is not per org.** One statement recomputes an hour for every org, and one stale bucket in any org re-rolls that hour for all of them. Rows never mix orgs, so this costs work, not correctness. Per-org scheduling is only worth it if one org's volume starts to delay the others.
+- **More dimensions mean more rows.** A tenant that sends many distinct `feature` values gets one row per value per hour. Nothing caps the number of distinct values yet.
 - Events older than the scheduler's two-hour window are only picked up by the startup scan or a manual backfill.
 - The startup scan aggregates all of `events` to find stale hours. Fine for v1; it should be bounded by a time range as data grows.

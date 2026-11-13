@@ -5,7 +5,7 @@ teams selling AI features bill their own customers for LLM usage.
 
 > **Status:** work in progress. Ingestion, dedupe, hourly rollups and the rating library (per-model
 > rates, volume tiers, discounts) work today. The ingest API requires a scoped API key and stores
-> events per org. Per-org rollups, the capture proxy, the query and cost API and the
+> events and rollups per org. The capture proxy, the query and cost API and the
 > dashboard are planned (see [What I'd do next](#what-id-do-next) and
 > [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -18,7 +18,8 @@ and real contracts add volume tiers and discounts. Naive counters drift under al
 billing number that cannot be reproduced cannot be trusted.
 
 This service ingests LLM call events (tenant, model, tokens, latency), de-duplicates them on
-`event_id` within each org, and aggregates them into hourly per-tenant, per-model rollups. Every rollup is recomputed
+`event_id` within each org, and aggregates them into hourly rollups per org, tenant, provider,
+model and feature. Every rollup is recomputed
 from the raw events, so it is idempotent and repairable. Rating (per-model rates, tiers, discounts)
 prices those rollups. A query API for usage, cost, revenue and margin, a proxy that captures usage
 from real LLM calls, and a dashboard are planned on top.
