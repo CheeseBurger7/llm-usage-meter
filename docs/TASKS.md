@@ -57,7 +57,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 - [~] (PR #17) **Ingest: batch endpoint.** `POST /v1/events/batch`, up to 500 events,
   per-event result (`created`, `duplicate`, `conflict`, `invalid`). One bad
   event does not fail the batch. Request body size limit.
-- [ ] **Ingest: per-key rate limit.** In-memory token bucket per API key.
+- [~] (PR #21) **Ingest: per-key rate limit.** In-memory token bucket per API key.
   429 with `Retry-After`. Limit is configurable by environment variable.
 - [ ] **Milestone 1 acceptance: two-org isolation test.** End-to-end
   integration test over HTTP against Postgres: two orgs each ingest with

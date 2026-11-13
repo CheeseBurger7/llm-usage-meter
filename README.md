@@ -5,7 +5,7 @@ teams selling AI features bill their own customers for LLM usage.
 
 > **Status:** work in progress. Ingestion, dedupe, hourly rollups and the rating library (per-model
 > rates, volume tiers, discounts) work today. The ingest API requires a scoped API key and stores
-> events and rollups per org. The capture proxy, the query and cost API and the
+> events and rollups per org, with a rate limit per key. The capture proxy, the query and cost API and the
 > dashboard are planned (see [What I'd do next](#what-id-do-next) and
 > [docs/DESIGN.md](docs/DESIGN.md)).
 
@@ -66,6 +66,8 @@ Configuration:
 | `DATABASE_URL` | required | Postgres connection string |
 | `LISTEN_ADDR` | `:8080` | HTTP listen address |
 | `ROLLUP_INTERVAL` | `1m` | How often the scheduler re-rolls the previous and current hour |
+| `INGEST_RATE_LIMIT_RPS` | `100` | Ingest requests per second allowed per API key. `0` turns the limit off |
+| `INGEST_RATE_LIMIT_BURST` | one second of the rate | Requests a key may send at once before the rate applies |
 
 A one-command `docker compose` demo (server, proxy, Postgres, Prometheus, Grafana) is planned.
 

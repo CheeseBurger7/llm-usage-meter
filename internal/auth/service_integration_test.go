@@ -94,9 +94,31 @@ func TestKeyLifecycle(t *testing.T) {
 			{other, auth.Identity{OrgID: globex.ID, Scope: auth.ScopeIngest}},
 		} {
 			got, err := svc.Verify(ctx, tc.key.Plaintext)
-			if err != nil || got != tc.want {
+			if err != nil || got.OrgID != tc.want.OrgID || got.Scope != tc.want.Scope {
 				t.Fatalf("Verify = %+v, %v; want %+v", got, err, tc.want)
 			}
+		}
+	})
+
+	t.Run("verify returns a stable id per key", func(t *testing.T) {
+		seen := map[auth.KeyID]string{}
+		for name, key := range map[string]auth.NewKey{"ingest": ingest, "read": read, "other": other} {
+			first, err := svc.Verify(ctx, key.Plaintext)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := svc.Verify(ctx, key.Plaintext)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if first.KeyID == (auth.KeyID{}) || first.KeyID != second.KeyID {
+				t.Fatalf("%s: key ids %s and %s; want the same non-zero id", name, first.KeyID, second.KeyID)
+			}
+			// Two keys of one org must not share a rate limit bucket.
+			if prev, dup := seen[first.KeyID]; dup {
+				t.Fatalf("%s and %s share key id %s", name, prev, first.KeyID)
+			}
+			seen[first.KeyID] = name
 		}
 	})
 

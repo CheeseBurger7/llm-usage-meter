@@ -141,6 +141,49 @@ Each event follows the rules of the single endpoint and gets its own result, in 
   is the same at-least-once contract as the single endpoint. The alternative, one multi-row insert,
   is Q15 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
 
+### Rate limit
+
+Each API key has a token bucket shared by `POST /v1/events` and `POST /v1/events/batch`. A request
+over the limit gets `429` with a `Retry-After` header in whole seconds and stores nothing:
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 1
+
+{"error":"rate limit exceeded, retry after the number of seconds in Retry-After"}
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `INGEST_RATE_LIMIT_RPS` | `100` | Requests per second per key, averaged. Fractions are allowed (`0.5` is one request every two seconds). `0` turns the limit off |
+| `INGEST_RATE_LIMIT_BURST` | one second of the rate, rounded up, at least 1 | Size of the bucket: how many requests a key may send at once |
+
+A value that does not parse stops the server at startup instead of falling back to the default.
+
+- **A bucket starts full**, each request takes one token, and tokens come back at the configured
+  rate up to the burst. `Retry-After` is the time until the next token, rounded up, so a client
+  that waits that long is let through (unless another client of the same key got there first).
+- **`429` is the only ingest answer worth retrying later unchanged.** Ingestion is idempotent, so
+  re-sending after the wait is safe. The client library will honour `Retry-After`.
+- **The limit counts requests, not events.** A batch of 500 costs one token, the same as a single
+  event, so the default allows up to 50,000 events per second per key through the batch endpoint.
+  It protects the service from a client stuck in a retry loop; it is not a usage quota (that is
+  the "Plan limits" task). Counting events instead is Q16 in
+  [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
+- **The bucket belongs to the key, not the org.** Two keys of one org are limited separately, so
+  one noisy deployment does not starve another. An org's total is the sum over its keys.
+- **The check runs after authentication and before the body is read.** A request with a missing,
+  unknown, revoked or wrong-scope key gets `401` or `403` and spends no token, so an attacker
+  without a key cannot use up a customer's limit. It also means unauthenticated traffic is not
+  limited here; that belongs to the load balancer in front of the service.
+- **Buckets live in the memory of one process.** They are empty after a restart (every key gets a
+  full burst again), and with N replicas a key can reach N times the limit. That is acceptable
+  while the service runs as one replica; a shared limiter would add a network call to every
+  request. Idle buckets are dropped once they would be full again, so memory is bounded by the
+  number of keys active within one refill period.
+- **The bucket is a small in-repo type, `internal/ratelimit`**, not `golang.org/x/time/rate`. It
+  is under 100 lines, needs no new dependency, and takes a clock, so its tests do not sleep.
+
 The server needs `DATABASE_URL` and applies migrations at startup. `LISTEN_ADDR` defaults to `:8080`.
 
 ## Schema and queries
@@ -191,6 +234,16 @@ Integration tests use testcontainers and skip when Docker is unavailable. CI run
 - `internal/api/batch_integration_test.go`: over HTTP against Postgres, a mixed batch stores only
   its good events, ids repeated inside a batch, a re-sent batch stores nothing new, a second org
   reusing the same ids, and a full batch of 500.
+- `internal/ratelimit/limiter_test.go`: burst then refill on a fake clock, the advertised wait is
+  enough, refill stops at the burst, keys are independent, idle buckets are dropped, and
+  concurrent callers never get more than the burst.
+- `internal/api/ratelimit_test.go`: `429` with `Retry-After` on both routes from one bucket, a
+  refused request never reaches the store, `401` and `403` spend nothing, and a second key is
+  unaffected.
+- `internal/api/ratelimit_integration_test.go`: over HTTP against Postgres, two stored keys of one
+  org have separate buckets and the refused event is not in `events`.
+- `cmd/server/ratelimit_test.go`: the environment variables, their defaults, `0` for off, and
+  startup errors for values that do not parse.
 - `internal/storage/migrate_integration_test.go`: migration 4 applied to a database that already
   has events and rollups, then down and up again. Migration 5 applied to a database that already
   has an event: the row is kept with provider `unknown`, an insert without a provider or with a
