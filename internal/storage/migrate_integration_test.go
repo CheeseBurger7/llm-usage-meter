@@ -188,3 +188,83 @@ func TestEventsUsageFieldsMigrationOnExistingData(t *testing.T) {
 		t.Fatalf("events with provider 'unknown' after down and up = %d; want 2", n)
 	}
 }
+
+// Migration 6 makes hourly_usage per org and adds provider, feature and the
+// cache token sums. Existing rollup rows cannot be attributed to an org, so they
+// are removed; the events they were computed from are kept, so the rows can be
+// rebuilt.
+func TestHourlyUsageOrgDimensionsMigrationOnExistingData(t *testing.T) {
+	ctx := context.Background()
+	pool, provider := newMigrationDB(t)
+
+	count := func(table string) int {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM `+table).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	if _, err := provider.UpTo(ctx, 5); err != nil {
+		t.Fatalf("migrate to 5: %v", err)
+	}
+	var acme, globex string
+	if err := pool.QueryRow(ctx, `INSERT INTO orgs (name) VALUES ('Acme') RETURNING id::text`).Scan(&acme); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO orgs (name) VALUES ('Globex') RETURNING id::text`).Scan(&globex); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO events (org_id, event_id, tenant_id, provider, model, input_tokens, output_tokens, latency_ms, event_time)
+	                             VALUES ($1, 'e', 't', 'p', 'm', 1, 1, 1, now())`, acme); err != nil {
+		t.Fatal(err)
+	}
+	const insertOld = `INSERT INTO hourly_usage (tenant_id, model, hour_start, event_count, input_tokens, output_tokens,
+	                                             latency_ms_sum, latency_ms_max, source_ingested_at)
+	                   VALUES ('t', 'm', date_trunc('hour', now()), 1, 1, 1, 1, 1, now())`
+	if _, err := pool.Exec(ctx, insertOld); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatalf("migrate up over existing rows: %v", err)
+	}
+	if e, h := count("events"), count("hourly_usage"); e != 1 || h != 0 {
+		t.Fatalf("after upgrade: events = %d, hourly_usage = %d; want 1 and 0", e, h)
+	}
+
+	// The new key: the same tenant, model and hour in two orgs, and under a
+	// second provider and a second feature in one org.
+	const insertNew = `INSERT INTO hourly_usage (org_id, tenant_id, provider, model, feature, hour_start, event_count,
+	                                             input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+	                                             latency_ms_sum, latency_ms_max, source_ingested_at)
+	                   VALUES ($1, 't', $2, 'm', $3, '2026-01-01T00:00:00Z', 1, 1, 1, 0, 0, 1, 1, now())`
+	for _, row := range [][]any{
+		{acme, "p", ""}, {globex, "p", ""}, {acme, "p2", ""}, {acme, "p", "chat"},
+	} {
+		if _, err := pool.Exec(ctx, insertNew, row...); err != nil {
+			t.Fatalf("insert %v: %v", row, err)
+		}
+	}
+	if _, err := pool.Exec(ctx, insertNew, acme, "p", ""); err == nil {
+		t.Fatal("the same bucket was stored twice")
+	}
+	if _, err := pool.Exec(ctx, insertOld); err == nil {
+		t.Fatal("a rollup row without an org was stored")
+	}
+
+	// Down and up again, so the Down section is exercised too. Events survive both.
+	if _, err := provider.DownTo(ctx, 5); err != nil {
+		t.Fatalf("migrate down to 5: %v", err)
+	}
+	if _, err := pool.Exec(ctx, insertOld); err != nil {
+		t.Fatalf("insert with the old columns after down: %v", err)
+	}
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatalf("migrate up a second time: %v", err)
+	}
+	if e, h := count("events"), count("hourly_usage"); e != 1 || h != 0 {
+		t.Fatalf("after down and up: events = %d, hourly_usage = %d; want 1 and 0", e, h)
+	}
+}

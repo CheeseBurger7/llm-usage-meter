@@ -45,6 +45,11 @@ type HourlyUsage struct {
 	LatencyMsMax     int64
 	SourceIngestedAt pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
+	OrgID            pgtype.UUID
+	Provider         string
+	Feature          string
+	CacheReadTokens  int64
+	CacheWriteTokens int64
 }
 
 type Org struct {

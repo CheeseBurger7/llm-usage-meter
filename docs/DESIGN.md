@@ -27,7 +27,7 @@ everything on the bottom row through one query API.
 | C1 | Capture SDK and proxy | New | `client/`, `cmd/proxy` | 2 |
 | C2 | Ingest API | Built, needs org scope | `internal/ingest`, `internal/api` | 1 |
 | C3 | Identity and API keys | New | `internal/auth` | 1 and 4 |
-| C4 | Events and rollups | Built, needs org scope | `internal/rollup`, `internal/storage` | 1 |
+| C4 | Events and rollups | Built, org-scoped | `internal/rollup`, `internal/storage` | 1 |
 | C5 | Price book and rating | Partly built | `internal/pricing` | 3 |
 | C6 | Query and cost API | New | `internal/api` | 3 |
 | C7 | Alerts and budgets | New | `internal/alerts` | 5 |
