@@ -137,3 +137,11 @@ follow-up task instead of rewriting silently.
 - **Options:** One statement per event, each committed on its own (reuses `Store.Ingest` unchanged, same rules as the single endpoint by construction, but up to 500 round trips and commits per request) / one multi-row `INSERT ... ON CONFLICT DO NOTHING RETURNING` plus one read of the skipped ids (two round trips and one commit, but new SQL, its own handling of ids repeated inside a batch, and two concurrent batches that share ids can deadlock unless rows are sorted)
 - **Default applied:** One statement per event, no surrounding transaction. A database failure returns `500` for the whole request with no partial results; events before the failure stay stored and a re-send reports them as `duplicate`. A 500-event batch against a local Postgres took about 0.2 s in the integration test. Revisit with numbers once the load generator exists.
 - **Answer:**
+
+### Q16: What does the ingest rate limit count, and what is the default?
+- **Status:** open
+- **Blocks:** nothing (default applied)
+- **Context:** The rate limit task says "token bucket per API key" with a configurable limit, but not whether a token is a request or an event, nor the default. A batch request holds up to 500 events, so the two units differ by up to 500 times. The client library will be written against whichever is chosen.
+- **Options:** count requests (decided before the body is read, simple to explain, but a batch of 500 costs the same as one event) / count events (matches database work, but the body must be read and parsed before refusing, and a batch larger than the remaining tokens needs a rule: refuse it whole or accept part)
+- **Default applied:** Requests. 100 per second per key with a burst of 100, set by `INGEST_RATE_LIMIT_RPS` and `INGEST_RATE_LIMIT_BURST`; `0` turns it off. The limit is on by default so a deployment that sets nothing is still protected. It is per process: with N replicas a key can reach N times the limit.
+- **Answer:**

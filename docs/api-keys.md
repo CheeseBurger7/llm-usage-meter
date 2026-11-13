@@ -77,6 +77,7 @@ Authorization: Bearer lum_ingest_<64 hex characters>
 | `401` | The key is unknown or revoked | `{"error":"invalid API key"}` |
 | `403` | The key is valid but has another scope | `{"error":"this route needs a key with the ingest scope"}` |
 | `500` | The key could not be checked, for example the database is down | `{"error":"internal error"}` |
+| `429` | The key is valid but has sent too many ingest requests; see [rate limit](ingestion.md#rate-limit) | `{"error":"rate limit exceeded, ..."}` with `Retry-After` |
 
 Every `401` carries `WWW-Authenticate: Bearer`. The check runs before the
 request body is read, so a rejected request never reaches the store.
