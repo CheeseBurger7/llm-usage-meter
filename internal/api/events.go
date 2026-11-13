@@ -55,35 +55,11 @@ func NewIngestHandler(store Ingester, log *slog.Logger) http.Handler {
 		}
 
 		var req eventRequest
-		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&req); err != nil {
-			var tooLarge *http.MaxBytesError
-			if errors.As(err, &tooLarge) {
-				writeJSON(w, http.StatusRequestEntityTooLarge, errorResponse{Error: "request body too large"})
-				return
-			}
-			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "malformed JSON: " + err.Error()})
-			return
-		}
-		if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-			writeJSON(w, http.StatusBadRequest, errorResponse{Error: "unexpected data after JSON object"})
+		if !decodeBody(w, r, maxBodyBytes, &req) {
 			return
 		}
 
-		res, err := store.Ingest(r.Context(), id.OrgID, ingest.Event{
-			EventID:          req.EventID,
-			TenantID:         req.TenantID,
-			Provider:         req.Provider,
-			Model:            req.Model,
-			Feature:          req.Feature,
-			InputTokens:      req.InputTokens,
-			OutputTokens:     req.OutputTokens,
-			CacheReadTokens:  req.CacheReadTokens,
-			CacheWriteTokens: req.CacheWriteTokens,
-			LatencyMs:        req.LatencyMs,
-			Timestamp:        req.Timestamp,
-		})
+		res, err := store.Ingest(r.Context(), id.OrgID, req.event())
 
 		var verr *ingest.ValidationError
 		switch {
@@ -100,6 +76,44 @@ func NewIngestHandler(store Ingester, log *slog.Logger) http.Handler {
 			writeJSON(w, http.StatusOK, map[string]string{"status": "duplicate"})
 		}
 	})
+}
+
+func (r eventRequest) event() ingest.Event {
+	return ingest.Event{
+		EventID:          r.EventID,
+		TenantID:         r.TenantID,
+		Provider:         r.Provider,
+		Model:            r.Model,
+		Feature:          r.Feature,
+		InputTokens:      r.InputTokens,
+		OutputTokens:     r.OutputTokens,
+		CacheReadTokens:  r.CacheReadTokens,
+		CacheWriteTokens: r.CacheWriteTokens,
+		LatencyMs:        r.LatencyMs,
+		Timestamp:        r.Timestamp,
+	}
+}
+
+// decodeBody reads one JSON object of at most limit bytes into v, rejecting
+// unknown fields and trailing data. On failure it writes the error response
+// (400 or 413) and returns false.
+func decodeBody(w http.ResponseWriter, r *http.Request, limit int64, v any) bool {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, errorResponse{Error: "request body too large"})
+			return false
+		}
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "malformed JSON: " + err.Error()})
+		return false
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, errorResponse{Error: "unexpected data after JSON object"})
+		return false
+	}
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

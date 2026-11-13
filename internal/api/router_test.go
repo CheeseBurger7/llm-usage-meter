@@ -40,12 +40,20 @@ func TestRouterAuth(t *testing.T) {
 		{"events with an unknown key", http.MethodPost, "/v1/events", "nope", http.StatusUnauthorized, false},
 		{"events with a read key", http.MethodPost, "/v1/events", "read-key", http.StatusForbidden, false},
 		{"events with an ingest key", http.MethodPost, "/v1/events", "ingest-key", http.StatusCreated, true},
+		{"batch without a key", http.MethodPost, "/v1/events/batch", "", http.StatusUnauthorized, false},
+		{"batch with a read key", http.MethodPost, "/v1/events/batch", "read-key", http.StatusForbidden, false},
+		{"batch with an ingest key", http.MethodPost, "/v1/events/batch", "ingest-key", http.StatusOK, true},
+		{"batch is POST only", http.MethodGet, "/v1/events/batch", "ingest-key", http.StatusMethodNotAllowed, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &fakeIngester{res: ingest.Created}
 			h := api.NewRouter(store, keys, slog.New(slog.NewTextHandler(io.Discard, nil)))
-			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(validBody))
+			body := validBody
+			if strings.HasSuffix(tt.path, "/batch") {
+				body = batchBody(validBody)
+			}
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(body))
 			if tt.key != "" {
 				req.Header.Set("Authorization", "Bearer "+tt.key)
 			}

@@ -90,6 +90,57 @@ Responses are JSON: `{"status":"created"}` / `{"status":"duplicate"}` on success
 `{"error": "...", "fields": {"model": "required"}}` for validation failures. Unexpected store
 errors return `500` with a generic message; details go to the log only.
 
+### Batch
+
+`POST /v1/events/batch` takes 1 to 500 events in one request, with the same key and scope. It is
+what the client library and the proxy will use.
+
+```sh
+curl -i -X POST localhost:8080/v1/events/batch -H "Authorization: Bearer $KEY" -d '{
+  "events": [
+    {"event_id": "evt-1", "tenant_id": "tenant-a", "provider": "anthropic", "model": "claude-sonnet",
+     "input_tokens": 100, "output_tokens": 50, "timestamp": "2026-01-02T03:04:05Z"},
+    {"event_id": "evt-2", "tenant_id": "tenant-a", "provider": "anthropic"}
+  ]
+}'
+```
+
+Each event follows the rules of the single endpoint and gets its own result, in request order:
+
+```json
+{"results": [
+  {"event_id": "evt-1", "status": "created"},
+  {"event_id": "evt-2", "status": "invalid", "error": "validation failed",
+   "fields": {"model": "required", "timestamp": "required"}}
+]}
+```
+
+| `status` | Meaning | Single-endpoint equivalent |
+|---|---|---|
+| `created` | stored for the first time | `201` |
+| `duplicate` | already stored with an identical payload | `200` |
+| `conflict` | the org already has this `event_id` with a different payload; nothing changed | `409` |
+| `invalid` | failed validation (`fields` says which), or could not be decoded: wrong type, unknown field, not an object | `400` |
+
+- **The HTTP status describes the batch, not the events.** A readable batch answers `200` even if
+  every event in it was rejected, so a client must read `results`. No per-event status is worth
+  retrying: all four are final.
+- **One bad event does not fail the batch.** Each element of `events` is decoded on its own, so an
+  event with a string where a number belongs is `invalid` in its slot and the events after it are
+  still stored. `event_id` is echoed when it could be read and is `""` otherwise; match by position
+  in that case.
+- **The whole request is rejected, and nothing is stored**, when the body is not a JSON object with
+  only an `events` array (`400`), when `events` is empty or has more than 500 entries (`400`), or
+  when the body is over 4 MiB (`413`). 500 events with every field at its byte limit fit in well
+  under that.
+- **An `event_id` repeated inside one batch** is handled in order: the first is `created`, an
+  identical repeat is `duplicate`, a different payload is `conflict`.
+- **A batch is not a transaction.** Events are written one statement at a time, each committed on
+  its own. If the database fails partway, the request answers `500` with no results, the events
+  before the failure stay stored, and re-sending the same batch reports them as `duplicate`. That
+  is the same at-least-once contract as the single endpoint. The alternative, one multi-row insert,
+  is Q15 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
+
 The server needs `DATABASE_URL` and applies migrations at startup. `LISTEN_ADDR` defaults to `:8080`.
 
 ## Schema and queries
@@ -134,6 +185,12 @@ Integration tests use testcontainers and skip when Docker is unavailable. CI run
   `org_id` in the payload, and refuses to run without an identity.
 - `internal/api/events_integration_test.go`: over HTTP, a second org reuses an `event_id` and gets
   `201`, and each row is stored under the org of the key that sent it.
+- `internal/api/batch_test.go`: one result per event in request order across every outcome,
+  undecodable events never reach the store, the 500-event and body-size limits, and a store
+  failure answering `500` without partial results.
+- `internal/api/batch_integration_test.go`: over HTTP against Postgres, a mixed batch stores only
+  its good events, ids repeated inside a batch, a re-sent batch stores nothing new, a second org
+  reusing the same ids, and a full batch of 500.
 - `internal/storage/migrate_integration_test.go`: migration 4 applied to a database that already
   has events and rollups, then down and up again. Migration 5 applied to a database that already
   has an event: the row is kept with provider `unknown`, an insert without a provider or with a

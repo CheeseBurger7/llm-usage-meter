@@ -77,7 +77,7 @@ Other commands: `make test` (integration tests use testcontainers and skip witho
 ```mermaid
 flowchart LR
     X[Capture proxy, customer-run] -.->|planned| I
-    C[Clients] -->|POST /v1/events| I[Ingest API]
+    C[Clients] -->|POST /v1/events, /v1/events/batch| I[Ingest API]
     I -->|INSERT ON CONFLICT DO NOTHING, per org| E[(events)]
     E -->|recompute per hour| R[Rollup]
     S[Scheduler / startup scan / backfill CLI] --> R
