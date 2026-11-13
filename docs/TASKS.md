@@ -52,7 +52,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   `(org_id, tenant_id, provider, model, feature, hour_start)` with sums for
   the cache token columns. Update `RollupWindow` and `ListStaleHours`.
   Integration tests, update docs/rollups.md.
-- [ ] **Ingest: batch endpoint.** `POST /v1/events/batch`, up to 500 events,
+- [~] (PR #17) **Ingest: batch endpoint.** `POST /v1/events/batch`, up to 500 events,
   per-event result (`created`, `duplicate`, `conflict`, `invalid`). One bad
   event does not fail the batch. Request body size limit.
 - [ ] **Ingest: per-key rate limit.** In-memory token bucket per API key.
