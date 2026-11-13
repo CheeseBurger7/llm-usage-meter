@@ -221,7 +221,7 @@ not blocked; Q7 and Q8 block their tasks until answered.
 |---|---|---|
 | Q2 | Window for volume tiers | Calendar month in UTC, per tenant and model |
 | Q3 | Where capture runs | In the customer's environment; no prompts or keys reach the service |
-| Q4 | Dashboard stack | Server-rendered Go templates in the binary |
+| Q4 | Dashboard stack | Answered: server-rendered Go templates in the binary, plus a vendored chart library for time-series views |
 | Q5 | Dashboard login | Email magic link |
 | Q6 | Licence and what stays public | Keep everything in the public Apache 2.0 repo for now |
 | Q7 | Raw event retention | No default; blocks the retention task |

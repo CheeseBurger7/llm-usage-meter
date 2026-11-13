@@ -43,12 +43,12 @@ follow-up task instead of rewriting silently.
 - **Answer:** Customer-run, as the default. The org reports its own numbers, so they are checked by reconciliation against the provider's usage report (see the reconciliation task), not by hosting the proxy.
 
 ### Q4: Dashboard stack
-- **Status:** open
+- **Status:** answered
 - **Blocks:** nothing (default applied)
 - **Context:** The dashboard tasks need a front-end approach.
 - **Options:** server-rendered `html/template` pages embedded in the Go binary (one deploy, no build step, plainer interactions) / separate React single-page app (richer charts, second build and deploy)
 - **Default applied:** Server-rendered pages embedded in the binary.
-- **Answer:**
+- **Answer:** Keep the default: server-rendered `html/template` pages embedded in the binary. Time-series views use a small chart library vendored as a static asset (no CDN, no Node build), fed JSON by the same query functions as the API. Buyers judge the dashboard on speed and correct numbers, not its stack, and the Milestone 4 pages are tables, forms and a few charts. Revisit only if the dashboard itself becomes the differentiator, for example an embeddable customer-facing usage portal.
 
 ### Q5: Dashboard login method
 - **Status:** open

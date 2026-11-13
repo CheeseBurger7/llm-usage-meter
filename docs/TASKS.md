@@ -12,7 +12,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 
 ## Owner actions (not for the agent)
 
-- Answer Q4 to Q10 in OPEN_QUESTIONS.md, or accept the defaults.
+- Answer Q5 to Q10 in OPEN_QUESTIONS.md, or accept the defaults.
 
 ## Done
 
@@ -123,7 +123,9 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   cookie is HttpOnly, Secure and SameSite=Lax. Email sending sits behind an
   interface with a log-only sender for development (Q5).
 - [ ] **Dashboard shell and overview page.** New `web/`: `html/template`
-  pages and static assets embedded in the server binary (Q4). Overview shows
+  pages and static assets embedded in the server binary (Q4). Charts use a
+  small chart library vendored under `web/` (no CDN, no Node build); state
+  the library and its licence in the PR. Overview shows
   month-to-date cost, revenue and margin, and the top 10 tenants by cost.
   Pages call the same query functions as the API.
 - [ ] **Dashboard: tenants table and tenant detail.** Sortable table of
