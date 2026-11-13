@@ -59,7 +59,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   event does not fail the batch. Request body size limit.
 - [~] (PR #21) **Ingest: per-key rate limit.** In-memory token bucket per API key.
   429 with `Retry-After`. Limit is configurable by environment variable.
-- [ ] **Milestone 1 acceptance: two-org isolation test.** End-to-end
+- [~] (PR #22) **Milestone 1 acceptance: two-org isolation test.** End-to-end
   integration test over HTTP against Postgres: two orgs each ingest with
   their own key (single and batch), rollups run, and neither org's rows
   appear under the other in `events` or `hourly_usage`. Also covers a

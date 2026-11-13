@@ -242,6 +242,13 @@ Integration tests use testcontainers and skip when Docker is unavailable. CI run
   unaffected.
 - `internal/api/ratelimit_integration_test.go`: over HTTP against Postgres, two stored keys of one
   org have separate buckets and the refused event is not in `events`.
+- `internal/api/isolation_integration_test.go`: the milestone 1 acceptance test (see
+  [DESIGN.md](DESIGN.md), build order). Over HTTP against Postgres, two orgs send through both
+  ingest routes with their own keys, reusing the same event ids and tenant ids with different
+  token counts, and the rollup runs. Every row of `events` and `hourly_usage` is read back per
+  org, so a row stored or summed under the wrong org fails the comparison. A revoked key (`401`)
+  and a `read` key (`403`) store nothing on either route, and the rows are unchanged after a
+  forced recompute.
 - `cmd/server/ratelimit_test.go`: the environment variables, their defaults, `0` for off, and
   startup errors for values that do not parse.
 - `internal/storage/migrate_integration_test.go`: migration 4 applied to a database that already
