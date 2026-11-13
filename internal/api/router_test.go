@@ -48,7 +48,7 @@ func TestRouterAuth(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &fakeIngester{res: ingest.Created}
-			h := api.NewRouter(store, keys, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			h := api.NewRouter(store, keys, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			body := validBody
 			if strings.HasSuffix(tt.path, "/batch") {
 				body = batchBody(validBody)

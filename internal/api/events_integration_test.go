@@ -19,8 +19,15 @@ import (
 	"github.com/CheeseBurger7/llm-usage-meter/internal/storage"
 )
 
-// startServer runs the router against a migrated Postgres container.
+// startServer runs the router, with no rate limit, against a migrated
+// Postgres container.
 func startServer(t *testing.T) (*httptest.Server, *auth.Service, *pgxpool.Pool) {
+	t.Helper()
+	return startServerWithLimit(t, nil)
+}
+
+// startServerWithLimit is startServer with a rate limit on the ingest routes.
+func startServerWithLimit(t *testing.T, limit *api.KeyLimiter) (*httptest.Server, *auth.Service, *pgxpool.Pool) {
 	t.Helper()
 	testcontainers.SkipIfProviderIsNotHealthy(t)
 	ctx := context.Background()
@@ -52,7 +59,7 @@ func startServer(t *testing.T) (*httptest.Server, *auth.Service, *pgxpool.Pool) 
 	}
 
 	keys := auth.New(pool)
-	srv := httptest.NewServer(api.NewRouter(ingest.NewStore(pool), keys, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	srv := httptest.NewServer(api.NewRouter(ingest.NewStore(pool), keys, limit, slog.New(slog.NewTextHandler(io.Discard, nil))))
 	t.Cleanup(srv.Close)
 	return srv, keys, pool
 }

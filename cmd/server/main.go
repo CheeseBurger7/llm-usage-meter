@@ -51,6 +51,10 @@ func serve(log *slog.Logger) error {
 	if addr == "" {
 		addr = ":8080"
 	}
+	limiter, err := ingestLimiter(os.Getenv)
+	if err != nil {
+		return err
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -79,7 +83,7 @@ func serve(log *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewRouter(ingest.NewStore(pool), auth.New(pool), log),
+		Handler:           api.NewRouter(ingest.NewStore(pool), auth.New(pool), limiter, log),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
