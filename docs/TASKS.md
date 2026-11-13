@@ -190,12 +190,20 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 - [ ] **Dockerfile + docker compose demo** in `deploy/compose/`
   (server, proxy, Postgres, Prometheus, Grafana). One command up.
 - [ ] **Backups.** Scheduled `pg_dump` to S3-compatible object storage with
-  a documented restore drill in docs/.
+  a documented restore drill in docs/. Backups are kept for 360 days (Q7).
 - [ ] **Plan limits.** Monthly event quota per org. Over quota returns 429
   with a clear error body and never drops already-accepted events.
-- [ ] **Raw event retention.** Job that deletes raw events older than the
-  retention window once their month has a closed statement (Q7). Rollups are
-  kept. Rollup recompute and backfill must skip hours whose raw events were
-  purged, or they would overwrite kept rollups with zeros (integration test).
+- [ ] **Partition `events` by month.** Range-partition `events` on the event
+  timestamp, one partition per UTC month, created ahead of time by the
+  scheduler. Postgres requires the partition column in the primary key, so
+  keep dedupe on `(org_id, event_id)` across months with a small
+  `event_ids` table (or an equivalent the design note justifies). Cheapest
+  before the hosted launch holds customer data (Q7).
+- [ ] **Raw event retention.** Job that detaches and drops an `events`
+  partition once its month ended more than 180 days ago and every tenant's
+  statement for that month is closed (Q7). No `DELETE` plus `VACUUM`.
+  `hourly_usage`, statements and statement lines are kept. Rollup recompute
+  and backfill must skip months whose raw events were purged, or they would
+  overwrite kept rollups with zeros (integration test).
 - [ ] **Grafana dashboard JSON** in `dashboards/` driven by the metrics above.
 - [ ] **Helm chart** in `deploy/helm/`.
