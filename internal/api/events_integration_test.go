@@ -19,7 +19,9 @@ import (
 	"github.com/CheeseBurger7/llm-usage-meter/internal/storage"
 )
 
-func TestIngestEndpointIdempotency(t *testing.T) {
+// startServer runs the router against a migrated Postgres container.
+func startServer(t *testing.T) (*httptest.Server, *auth.Service, *pgxpool.Pool) {
+	t.Helper()
 	testcontainers.SkipIfProviderIsNotHealthy(t)
 	ctx := context.Background()
 
@@ -50,6 +52,15 @@ func TestIngestEndpointIdempotency(t *testing.T) {
 	}
 
 	keys := auth.New(pool)
+	srv := httptest.NewServer(api.NewRouter(ingest.NewStore(pool), keys, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	t.Cleanup(srv.Close)
+	return srv, keys, pool
+}
+
+func TestIngestEndpointIdempotency(t *testing.T) {
+	srv, keys, pool := startServer(t)
+	ctx := context.Background()
+
 	org, err := keys.CreateOrg(ctx, "Acme")
 	if err != nil {
 		t.Fatal(err)
@@ -66,9 +77,6 @@ func TestIngestEndpointIdempotency(t *testing.T) {
 	if _, err := keys.RevokeByPrefix(ctx, revokedKey.Prefix); err != nil {
 		t.Fatal(err)
 	}
-
-	srv := httptest.NewServer(api.NewRouter(ingest.NewStore(pool), keys, slog.New(slog.NewTextHandler(io.Discard, nil))))
-	t.Cleanup(srv.Close)
 
 	send := func(key, body string) int {
 		t.Helper()

@@ -17,5 +17,6 @@ func NewRouter(store Ingester, keys auth.Verifier, log *slog.Logger) http.Handle
 		w.WriteHeader(http.StatusOK)
 	})
 	mux.Handle("POST /v1/events", ingestOnly(NewIngestHandler(store, log)))
+	mux.Handle("POST /v1/events/batch", ingestOnly(NewBatchIngestHandler(store, log)))
 	return mux
 }
