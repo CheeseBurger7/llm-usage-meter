@@ -43,9 +43,20 @@ type Org struct {
 	CreatedAt time.Time
 }
 
+// KeyID identifies one API key. It is the UUID from the api_keys table, not
+// the key itself, so it is safe to log and to use as a map key.
+type KeyID [16]byte
+
+// String formats the id as a canonical UUID.
+func (id KeyID) String() string {
+	return pgtype.UUID{Bytes: id, Valid: true}.String()
+}
+
 // Identity is what a verified key proves about a request.
 type Identity struct {
 	OrgID OrgID
+	// KeyID tells two keys of the same org apart, for per-key rate limits.
+	KeyID KeyID
 	Scope Scope
 }
 
@@ -127,7 +138,7 @@ func (s *Service) Verify(ctx context.Context, key string) (Identity, error) {
 		return Identity{}, ErrRevokedKey
 	}
 	// The scope comes from the stored row, never from the text of the key.
-	return Identity{OrgID: row.OrgID.Bytes, Scope: Scope(row.Scope)}, nil
+	return Identity{OrgID: row.OrgID.Bytes, KeyID: row.ID.Bytes, Scope: Scope(row.Scope)}, nil
 }
 
 // RevokeByPrefix revokes every active key with the prefix and returns how
