@@ -12,7 +12,9 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 
 ## Owner actions (not for the agent)
 
-- Answer Q4 to Q10 in OPEN_QUESTIONS.md, or accept the defaults.
+- Answer Q7 to Q10 in OPEN_QUESTIONS.md, or accept the defaults.
+- Before the hosted launch: register an OAuth app with Google and with
+  GitHub and supply each client id and secret as environment variables (Q5).
 
 ## Done
 
@@ -118,12 +120,23 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 ### Milestone 4: dashboard (C3, C8)
 
 - [ ] **Dashboard login.** `users(id, org_id, email, created_at)` with a
-  unique index on `email`. Email
-  magic link: single-use token, stored hashed, 15-minute expiry. Session
-  cookie is HttpOnly, Secure and SameSite=Lax. Email sending sits behind an
-  interface with a log-only sender for development (Q5).
+  unique index on `email`, and `user_identities(user_id, provider, subject)`
+  with a unique key on `(provider, subject)`. OAuth sign-in with Google and
+  GitHub (Q5): authorization-code flow with `golang.org/x/oauth2`, a `state`
+  value checked on the callback, PKCE where the provider supports it. Request
+  only the scopes needed to read the account id and email. Match users on the
+  provider's account id, and refuse an email the provider has not verified.
+  Client id and secret come from environment variables; a provider without
+  them is not offered. Session cookie is HttpOnly, Secure and SameSite=Lax,
+  and sessions are stored server-side so they can be revoked. A
+  development-only login, enabled by an environment variable and off by
+  default, signs in without a provider for the local demo. Verify endpoint
+  and field names against the current provider docs. Tests with a fake
+  provider.
 - [ ] **Dashboard shell and overview page.** New `web/`: `html/template`
-  pages and static assets embedded in the server binary (Q4). Overview shows
+  pages and static assets embedded in the server binary (Q4). Charts use a
+  small chart library vendored under `web/` (no CDN, no Node build); state
+  the library and its licence in the PR. Overview shows
   month-to-date cost, revenue and margin, and the top 10 tenants by cost.
   Pages call the same query functions as the API.
 - [ ] **Dashboard: tenants table and tenant detail.** Sortable table of
@@ -150,8 +163,8 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 - [ ] **Alerts: webhook delivery.** POST a JSON payload signed with
   HMAC-SHA256 using a per-org secret. Retry with backoff. Record delivery
   status.
-- [ ] **Alerts: email delivery.** Reuse the email sender interface from
-  dashboard login.
+- [ ] **Alerts: email delivery.** Email sending sits behind an interface
+  with a log-only sender for development.
 - [ ] **Statements: monthly snapshot.** `statements` and `statement_lines`
   hold one frozen statement per tenant per month, one line per model with
   usage, rate, discount and net. Late events after a statement closes become
