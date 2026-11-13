@@ -129,3 +129,11 @@ follow-up task instead of rewriting silently.
 - **Options:** exclusive: `input_tokens` leaves out cache tokens and total input is the sum of the three (no double billing; capture must subtract for providers that report an inclusive count) / inclusive: `input_tokens` is the total and cache counts are a breakdown (pricing must subtract, and an event with cache counts above `input_tokens` becomes invalid)
 - **Default applied:** Exclusive. Ingest stores the three counts as sent and does not cross-check them. The proxy tasks must map each provider's usage block to this meaning, verified against the provider's current docs.
 - **Answer:**
+
+### Q15: How does the batch endpoint write its events?
+- **Status:** open
+- **Blocks:** nothing (default applied)
+- **Context:** `POST /v1/events/batch` takes up to 500 events and must report `created`, `duplicate`, `conflict` or `invalid` for each. The task did not say how the events reach Postgres or what a database failure halfway through a batch returns.
+- **Options:** One statement per event, each committed on its own (reuses `Store.Ingest` unchanged, same rules as the single endpoint by construction, but up to 500 round trips and commits per request) / one multi-row `INSERT ... ON CONFLICT DO NOTHING RETURNING` plus one read of the skipped ids (two round trips and one commit, but new SQL, its own handling of ids repeated inside a batch, and two concurrent batches that share ids can deadlock unless rows are sorted)
+- **Default applied:** One statement per event, no surrounding transaction. A database failure returns `500` for the whole request with no partial results; events before the failure stay stored and a re-send reports them as `duplicate`. A 500-event batch against a local Postgres took about 0.2 s in the integration test. Revisit with numbers once the load generator exists.
+- **Answer:**

@@ -69,6 +69,7 @@ Authorization: Bearer lum_ingest_<64 hex characters>
 |---|---|
 | `GET /healthz` | none, always open |
 | `POST /v1/events` | `ingest` |
+| `POST /v1/events/batch` | `ingest` |
 
 | Status | When | Body |
 |---|---|---|
