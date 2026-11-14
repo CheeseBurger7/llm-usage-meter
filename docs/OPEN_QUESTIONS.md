@@ -153,3 +153,11 @@ follow-up task instead of rewriting silently.
 - **Options:** no attempt limit, the batch in flight is retried until the service answers and the queue (10000 events by default) is the only bound, dropping its oldest when full (an outage shorter than the time to fill the queue loses nothing; one batch can stay in flight for the whole outage, and `Close` needs a deadline) / give up after N attempts and count the batch as dropped (simple to explain, a stuck batch never holds up newer ones, but an outage longer than a few backoff steps discards batch after batch that the queue had room to keep)
 - **Default applied:** No attempt limit. Waits grow from 200 ms to 30 s, with `Retry-After` honoured up to one minute. Only `429`, `408`, `5xx` and transport errors are retried; `400`, `401`, `403` and `413` count the batch as rejected at once, so a revoked key does not retry forever. `Close(ctx)` drops and counts what is unsent when `ctx` ends.
 - **Answer:**
+
+### Q18: What does the proxy do with a call that has no tenant header?
+- **Status:** open
+- **Blocks:** nothing (default applied)
+- **Context:** The proxy takes the tenant from `X-Meter-Tenant`, and an event without a `tenant_id` is refused by ingest. The task says the proxy fails open when metering is down, but not what happens when the caller forgot the header. Every later proxy task (streaming, OpenAI-compatible) inherits the choice.
+- **Options:** forward the call and do not meter it, with a warning in the log and a skipped counter (a tagging mistake never breaks the customer's product; untagged usage is missing from billing until someone reads the log or reconciliation shows the gap) / refuse the call with `400` (no usage can go unbilled; a metering mistake now fails LLM calls, which the design rules out) / meter it under a configurable default tenant such as `unassigned` (nothing is lost and the gap is visible in the dashboard; one more setting, and cost lands on a tenant nobody can be billed for)
+- **Default applied:** Forward and do not meter. The proxy logs the reason without any header value and counts the call as skipped.
+- **Answer:**
