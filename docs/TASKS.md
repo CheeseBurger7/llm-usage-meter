@@ -68,7 +68,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 
 ### Milestone 2: capture (C1)
 
-- [ ] **Go client package.** New `client/`: `New(endpoint, key)`,
+- [~] (PR #23) **Go client package.** New `client/`: `New(endpoint, key)`,
   non-blocking `Record(event)`, bounded queue, batching to the batch
   endpoint, retry with exponential backoff, drop-oldest with a dropped
   counter, `Close` flushes. It must never block or fail the caller's LLM

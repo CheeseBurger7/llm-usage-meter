@@ -93,7 +93,7 @@ errors return `500` with a generic message; details go to the log only.
 ### Batch
 
 `POST /v1/events/batch` takes 1 to 500 events in one request, with the same key and scope. It is
-what the client library and the proxy will use.
+what the [client library](client.md) uses, and the proxy through it.
 
 ```sh
 curl -i -X POST localhost:8080/v1/events/batch -H "Authorization: Bearer $KEY" -d '{
@@ -164,7 +164,7 @@ A value that does not parse stops the server at startup instead of falling back 
   rate up to the burst. `Retry-After` is the time until the next token, rounded up, so a client
   that waits that long is let through (unless another client of the same key got there first).
 - **`429` is the only ingest answer worth retrying later unchanged.** Ingestion is idempotent, so
-  re-sending after the wait is safe. The client library will honour `Retry-After`.
+  re-sending after the wait is safe. The [client library](client.md) honours `Retry-After`.
 - **The limit counts requests, not events.** A batch of 500 costs one token, the same as a single
   event, so the default allows up to 50,000 events per second per key through the batch endpoint.
   It protects the service from a client stuck in a retry loop; it is not a usage quota (that is
