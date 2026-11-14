@@ -91,7 +91,7 @@ flowchart LR
 
 Solid lines exist today; dotted lines are planned. The rating package exists but nothing calls it
 until the cost API lands. Everything runs in one Go binary backed by Postgres, except the capture
-proxy, which runs in the customer's environment so prompts and provider keys never reach the
+proxy, which runs in the customer's environment so prompts and inference keys never reach the
 service. The full component design, with all ten components, is in
 [docs/DESIGN.md](docs/DESIGN.md).
 
