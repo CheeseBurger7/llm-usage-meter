@@ -145,3 +145,11 @@ follow-up task instead of rewriting silently.
 - **Options:** count requests (decided before the body is read, simple to explain, but a batch of 500 costs the same as one event) / count events (matches database work, but the body must be read and parsed before refusing, and a batch larger than the remaining tokens needs a rule: refuse it whole or accept part)
 - **Default applied:** Requests. 100 per second per key with a burst of 100, set by `INGEST_RATE_LIMIT_RPS` and `INGEST_RATE_LIMIT_BURST`; `0` turns it off. The limit is on by default so a deployment that sets nothing is still protected. It is per process: with N replicas a key can reach N times the limit.
 - **Answer:**
+
+### Q17: How long does the client library retry a batch?
+- **Status:** open
+- **Blocks:** nothing (default applied)
+- **Context:** The client task says "retry with exponential backoff" and "drop-oldest with a dropped counter" but not when a batch that keeps failing is given up. The proxy and the load generator inherit the choice, and it decides how many events an outage of the service costs a customer.
+- **Options:** no attempt limit, the batch in flight is retried until the service answers and the queue (10000 events by default) is the only bound, dropping its oldest when full (an outage shorter than the time to fill the queue loses nothing; one batch can stay in flight for the whole outage, and `Close` needs a deadline) / give up after N attempts and count the batch as dropped (simple to explain, a stuck batch never holds up newer ones, but an outage longer than a few backoff steps discards batch after batch that the queue had room to keep)
+- **Default applied:** No attempt limit. Waits grow from 200 ms to 30 s, with `Retry-After` honoured up to one minute. Only `429`, `408`, `5xx` and transport errors are retried; `400`, `401`, `403` and `413` count the batch as rejected at once, so a revoked key does not retry forever. `Close(ctx)` drops and counts what is unsent when `ctx` ends.
+- **Answer:**
