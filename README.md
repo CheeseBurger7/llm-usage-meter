@@ -79,7 +79,7 @@ Other commands: `make test` (integration tests use testcontainers and skip witho
 ```mermaid
 flowchart LR
     X[Capture proxy, customer-run] -.->|planned| I
-    C[Clients] -->|POST /v1/events, /v1/events/batch| I[Ingest API]
+    C[Go client library, other clients] -->|POST /v1/events, /v1/events/batch| I[Ingest API]
     I -->|INSERT ON CONFLICT DO NOTHING, per org| E[(events)]
     E -->|recompute per hour| R[Rollup]
     S[Scheduler / startup scan / backfill CLI] --> R
@@ -104,6 +104,7 @@ service. The full component design, with all ten components, is in
 | Orgs and API keys tables | `internal/storage` | [docs/orgs-and-keys.md](docs/orgs-and-keys.md) |
 | API key generation, verification, admin commands | `internal/auth`, `cmd/server` | [docs/api-keys.md](docs/api-keys.md) |
 | HTTP authentication middleware | `internal/auth`, `internal/api` | [docs/api-keys.md](docs/api-keys.md#http-authentication) |
+| Go client library: batching, retries, bounded queue | `client` | [docs/client.md](docs/client.md) |
 
 ## Design decisions and tradeoffs
 
@@ -131,6 +132,10 @@ service. The full component design, with all ten components, is in
 - **API keys checked on every request, with no cache.** One indexed lookup per request means a
   revoked key stops working immediately. Unknown and revoked keys get the same `401`, and a failed
   check refuses the request instead of letting it through.
+- **The client library never blocks or fails the caller.** `Record` only queues in memory. A
+  background worker batches, retries with exponential backoff and honours `Retry-After`. When the
+  queue is full the oldest event is dropped and counted, so a metering outage costs events, never
+  an LLM call. See [docs/client.md](docs/client.md).
 - **sqlc over an ORM.** Queries stay plain SQL, checked against the migrations at generate time,
   with typed Go output and no runtime reflection.
 - **Latency stored as sum and max.** Rows stay mergeable across hours. Percentiles are out of scope
@@ -149,8 +154,9 @@ Six milestones, in order. The product is sellable at the end of the fourth. The 
 
 1. **Multi-tenant core:** orgs and scoped API keys, events and rollups keyed by org, cache token
    and feature fields, a batch ingest endpoint and per-key rate limits.
-2. **Capture:** a Go client library and a proxy the customer runs next to their app. It reads
-   token usage from Anthropic and OpenAI-compatible responses, streaming included, and fails open.
+2. **Capture:** a proxy the customer runs next to their app, built on the Go client library
+   (done). It reads token usage from Anthropic and OpenAI-compatible responses, streaming
+   included, and fails open.
 3. **Read side:** versioned cost and price books per org, and `GET /v1/usage` and `GET /v1/cost`
    returning cost, revenue and margin. Volume tiers apply per calendar month.
 4. **Dashboard:** Google and GitHub sign-in, overview, tenants, API keys, price books and signup,
