@@ -38,9 +38,9 @@ follow-up task instead of rewriting silently.
 - **Status:** answered
 - **Blocks:** nothing (default applied)
 - **Context:** The proxy and SDK tasks need to know whether LLM traffic passes through the hosted service.
-- **Options:** customer-run proxy and client library that send token counts and tags only (no prompts or provider keys reach the service, no added latency or outage risk, customer deploys one container) / hosted proxy (nothing to deploy, but the service sees prompts and keys and becomes a point of failure for every LLM call)
+- **Options:** customer-run proxy and client library that send token counts and tags only (no prompts or inference keys reach the service, no added latency or outage risk, customer deploys one container) / hosted proxy (nothing to deploy, but the service sees prompts and keys and becomes a point of failure for every LLM call)
 - **Default applied:** Customer-run. The proxy is shipped as a container the customer runs next to their app.
-- **Answer:** Customer-run, as the default. The org reports its own numbers, so they are checked by reconciliation against the provider's usage report (see the reconciliation task), not by hosting the proxy.
+- **Answer:** Customer-run, as the default. The org reports its own numbers, so they are checked by reconciliation against the provider's usage report (see the reconciliation task), not by hosting the proxy. The guarantee is that the service never sits in the LLM call path: it never sees prompts or completions and never holds an inference key, meaning a key that can make LLM calls. A key that can only read usage totals is a different credential and is covered by Q10.
 
 ### Q4: Dashboard stack
 - **Status:** answered
@@ -91,12 +91,12 @@ follow-up task instead of rewriting silently.
 - **Answer:**
 
 ### Q10: How do provider totals reach the reconciliation report?
-- **Status:** open
+- **Status:** answered
 - **Blocks:** nothing (default applied)
-- **Context:** Reconciliation compares metered usage with what the provider says it served. The service must not hold provider keys (Q3).
-- **Options:** the org uploads the provider's usage export file (no credentials stored, a manual step each month) / the org gives the service a provider admin key and totals are pulled automatically (no manual step, the service stores a sensitive credential)
+- **Context:** Reconciliation compares metered usage with what the provider says it served. The service must not hold inference keys (Q3).
+- **Options:** the org uploads the provider's usage export file (no credentials stored, a manual step each month) / the org gives the service a provider key with read access to usage data and totals are pulled automatically (no manual step, the service stores a sensitive credential)
 - **Default applied:** File upload.
-- **Answer:**
+- **Answer:** Automatic pull with a usage read key is the recommended path, and file upload stays as the fallback for orgs that won't share a key. A usage read key is a provider key that grants read access to usage and cost data per model (token counts, request counts, cost), with no access to prompts or completions and no ability to make LLM calls. Use the narrowest scope each provider offers; if a provider only exposes usage through a broader key, say so plainly on the setup page so the org can choose file upload instead. The key is encrypted at rest, used only by the reconciliation job, never logged or returned by the API, and the org can revoke it from the dashboard at any time. The privacy policy states that the key is used only to read usage totals and that prompts and completions are never accessed.
 
 ### Q11: ID type for orgs and API keys
 - **Status:** open
