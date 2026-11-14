@@ -1,7 +1,7 @@
 # Go client library
 
 `client/` records usage events from a Go program and delivers them to the service in the
-background. The capture proxy and the load generator will send through it.
+background. The [capture proxy](proxy.md) sends through it, and the load generator will.
 
 The one rule it is built around: **metering must never slow down or fail the LLM call it
 describes.** `Record` only puts the event in an in-memory queue. It does no I/O, takes no context
