@@ -11,6 +11,7 @@ each HTTP request. The tables are described in
 lum_<scope>_<64 hex characters>
 ```
 
+- `lum` stands for Lumecount, the product name (Q9).
 - `scope` is `ingest` (write events) or `read` (query usage and cost).
 - The last part is 32 bytes from `crypto/rand`, hex-encoded.
 - The **prefix** is the first 8 characters of that last part. It is stored in
