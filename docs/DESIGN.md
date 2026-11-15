@@ -222,7 +222,7 @@ decides whether milestones 3 to 5 keep this order.
 
 ## Open decisions
 
-Tracked in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). Q2 to Q6 and Q9 have a default so the daily agent is
+Tracked in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). Q2 to Q6 have a default so the daily agent is
 not blocked.
 
 | # | Decision | Recommended default |
@@ -234,7 +234,7 @@ not blocked.
 | Q6 | Licence and what stays public | Answered: everything stays public under Apache 2.0; the hosted service is the product |
 | Q7 | Raw event retention | Answered: raw events dropped by monthly partition 180 days after a closed month; rollups and statements kept; backups kept 360 days |
 | Q8 | Stripe account and export shape | Answered: rated amounts as invoice items on the org's own Stripe account, connected through Stripe Connect Standard |
-| Q9 | Product name and domain | Needed before signup ships |
+| Q9 | Product name and domain | Answered: Lumecount on lumecount.com; key prefix stays `lum_`; repo and module keep `llm-usage-meter` |
 
 Q1 (money representation) is settled in code: `internal/pricing/rate.go` converts rates to integer
 micro-units and does all arithmetic in integers.
