@@ -79,7 +79,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   package. Tenant and feature come from `X-Meter-Tenant` and
   `X-Meter-Feature` headers, which are stripped before forwarding. `event_id`
   is the provider's response ID. Never log or store request or response
-  bodies or provider keys. Fail open if metering is down. Verify usage field
+  bodies or inference keys. Fail open if metering is down. Verify usage field
   names against the current provider docs. Tests with a fake upstream.
 - [ ] **Proxy: streaming responses.** Read usage from server-sent events
   while streaming through without buffering the whole response. Test that
@@ -172,13 +172,22 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   statements close --org --month`.
 - [ ] **Statements: CSV export.** `GET /v1/statements/{id}.csv` and a
   dashboard download link.
-- [ ] **Reconciliation report.** The org uploads its provider's usage
-  export for a month (Q10). Compare metered tokens per provider and model
-  with the provider's totals and show the difference, absolute and percent,
-  on a dashboard page and at `GET /v1/reconciliation?month`. Flag a
+- [ ] **Provider usage read keys: encrypted storage.** An org adds, views
+  (prefix only) and revokes a usage read key per provider from the dashboard
+  (Q10). Keys are encrypted at rest with envelope encryption, the data key
+  coming from a KMS in production and an environment variable in the local
+  demo. Only the reconciliation job decrypts them. Never log a key or return
+  it from the API. Reject a key the provider says can make LLM calls when
+  the provider exposes key scopes. Verify scope names against the current
+  provider docs; never invent them.
+- [ ] **Reconciliation report.** Provider totals for a month come from a
+  scheduled pull with the org's usage read key, or from an uploaded usage
+  export when the org has no key (Q10). Compare metered tokens per provider
+  and model with the provider's totals and show the difference, absolute and
+  percent, on a dashboard page and at `GET /v1/reconciliation?month`. Flag a
   difference above a configurable threshold. Start with one provider.
-  Verify the export format against the current provider docs; never invent
-  it. No provider key is stored.
+  Verify the usage API and export format against the current provider docs;
+  never invent them. No inference key is ever stored.
 - [ ] **Stripe usage export.** Push closed statement totals to Stripe.
   Blocked by Q8.
 
