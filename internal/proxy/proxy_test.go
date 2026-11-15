@@ -289,7 +289,7 @@ func TestForwardedButNotMetered(t *testing.T) {
 	}{
 		{name: "provider error", path: "/v1/messages", header: tags,
 			respond: respondWith(429, "application/json", apiError), status: 429, body: apiError},
-		{name: "streamed response", path: "/v1/messages", header: tags,
+		{name: "stream cut off before the end", path: "/v1/messages", header: tags,
 			respond: respondWith(200, "text/event-stream", sse), status: 200, body: sse, skipped: 1},
 		{name: "no tenant header", path: "/v1/messages", header: map[string]string{FeatureHeader: "chat"},
 			respond: jsonMessage, status: 200, body: messageBody, skipped: 1},
