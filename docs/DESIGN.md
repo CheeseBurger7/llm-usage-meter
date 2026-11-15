@@ -59,13 +59,15 @@ environment.
   `X-Meter-Feature` headers. The proxy reads the usage block of each response and posts an event.
   `event_id` is the provider's response ID, so retries dedupe.
 - **Decisions:** it runs next to the customer's app and sends token counts and tags only. Prompts,
-  completions and provider keys never reach the service. It fails open: a metering outage must never
+  completions and inference keys never reach the service. It fails open: a metering outage must never
   fail an LLM call. Build the proxy first, because one Go build serves every language.
 - **Risk:** streamed responses report usage in the event stream, so the proxy must read it without
   buffering.
 - **Trust:** the org runs the proxy and holds the ingest key, so the numbers are org-reported. A monthly
   reconciliation against the provider's own usage report shows any gap, whether from calls that bypassed
-  the proxy or from wrong events.
+  the proxy or from wrong events. Provider totals are pulled with an optional usage read key that can
+  read usage data but cannot make LLM calls, or uploaded as a usage export when the org has no key
+  (Q10).
 
 ### C3 Identity and API keys (`internal/auth`)
 
