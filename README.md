@@ -5,8 +5,8 @@ teams selling AI features bill their own customers for LLM usage.
 
 > **Status:** work in progress. Ingestion, dedupe, hourly rollups and the rating library (per-model
 > rates, volume tiers, discounts) work today. The ingest API requires a scoped API key and stores
-> events and rollups per org, with a rate limit per key. The capture proxy, the query and cost API and the
-> dashboard are planned (see [What I'd do next](#what-id-do-next) and
+> events and rollups per org, with a rate limit per key. A capture proxy records usage from
+> non-streaming Anthropic Messages calls. The query and cost API and the dashboard are planned (see [What I'd do next](#what-id-do-next) and
 > [docs/DESIGN.md](docs/DESIGN.md)).
 
 ## Problem
@@ -21,8 +21,8 @@ This service ingests LLM call events (tenant, model, tokens, latency), de-duplic
 `event_id` within each org, and aggregates them into hourly rollups per org, tenant, provider,
 model and feature. Every rollup is recomputed
 from the raw events, so it is idempotent and repairable. Rating (per-model rates, tiers, discounts)
-prices those rollups. A query API for usage, cost, revenue and margin, a proxy that captures usage
-from real LLM calls, and a dashboard are planned on top.
+prices those rollups. A proxy the customer runs captures usage from real LLM calls. A query API
+for usage, cost, revenue and margin and a dashboard are planned on top.
 
 ## Quickstart
 
@@ -69,6 +69,9 @@ Configuration:
 | `INGEST_RATE_LIMIT_RPS` | `100` | Ingest requests per second allowed per API key. `0` turns the limit off |
 | `INGEST_RATE_LIMIT_BURST` | one second of the rate | Requests a key may send at once before the rate applies |
 
+To capture usage from real Anthropic calls instead of posting events by hand, run the capture
+proxy next to your app and point the provider base URL at it: see [docs/proxy.md](docs/proxy.md).
+
 A one-command `docker compose` demo (server, proxy, Postgres, Prometheus, Grafana) is planned.
 
 Other commands: `make test` (integration tests use testcontainers and skip without Docker),
@@ -78,7 +81,9 @@ Other commands: `make test` (integration tests use testcontainers and skip witho
 
 ```mermaid
 flowchart LR
-    X[Capture proxy, customer-run] -.->|planned| I
+    A[Customer app] -->|LLM call| X[Capture proxy, customer-run]
+    X -->|unchanged| L[LLM provider]
+    X -->|token counts and tags| C
     C[Go client library, other clients] -->|POST /v1/events, /v1/events/batch| I[Ingest API]
     I -->|INSERT ON CONFLICT DO NOTHING, per org| E[(events)]
     E -->|recompute per hour| R[Rollup]
@@ -105,6 +110,7 @@ service. The full component design, with all ten components, is in
 | API key generation, verification, admin commands | `internal/auth`, `cmd/server` | [docs/api-keys.md](docs/api-keys.md) |
 | HTTP authentication middleware | `internal/auth`, `internal/api` | [docs/api-keys.md](docs/api-keys.md#http-authentication) |
 | Go client library: batching, retries, bounded queue | `client` | [docs/client.md](docs/client.md) |
+| Capture proxy: Anthropic Messages, non-streaming | `cmd/proxy`, `internal/proxy` | [docs/proxy.md](docs/proxy.md) |
 
 ## Design decisions and tradeoffs
 
@@ -136,6 +142,10 @@ service. The full component design, with all ten components, is in
   background worker batches, retries with exponential backoff and honours `Retry-After`. When the
   queue is full the oldest event is dropped and counted, so a metering outage costs events, never
   an LLM call. See [docs/client.md](docs/client.md).
+- **The capture proxy forwards first and meters from a copy.** Response bytes go to the caller as
+  they arrive; the usage block is read from an in-memory copy after the last byte was written. Only
+  token counts and the tenant and feature tags leave the proxy, never bodies or provider keys, and
+  a call that cannot be metered is still forwarded. See [docs/proxy.md](docs/proxy.md).
 - **sqlc over an ORM.** Queries stay plain SQL, checked against the migrations at generate time,
   with typed Go output and no runtime reflection.
 - **Latency stored as sum and max.** Rows stay mergeable across hours. Percentiles are out of scope
@@ -155,8 +165,8 @@ Six milestones, in order. The product is sellable at the end of the fourth. The 
 1. **Multi-tenant core:** orgs and scoped API keys, events and rollups keyed by org, cache token
    and feature fields, a batch ingest endpoint and per-key rate limits.
 2. **Capture:** a proxy the customer runs next to their app, built on the Go client library
-   (done). It reads token usage from Anthropic and OpenAI-compatible responses, streaming
-   included, and fails open.
+   (done). It reads token usage from non-streaming Anthropic responses (done); streaming and
+   OpenAI-compatible responses are next. It fails open.
 3. **Read side:** versioned cost and price books per org, and `GET /v1/usage` and `GET /v1/cost`
    returning cost, revenue and margin. Volume tiers apply per calendar month.
 4. **Dashboard:** Google and GitHub sign-in, overview, tenants, API keys, price books and signup,

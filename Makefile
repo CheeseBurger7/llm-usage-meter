@@ -2,6 +2,7 @@
 
 build:
 	go build -o bin/server ./cmd/server
+	go build -o bin/proxy ./cmd/proxy
 
 test:
 	go test -race ./...

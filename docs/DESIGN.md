@@ -24,7 +24,7 @@ everything on the bottom row through one query API.
 
 | # | Component | Status | Package | Milestone |
 |---|---|---|---|---|
-| C1 | Capture SDK and proxy | Client library built ([client.md](client.md)), proxy new | `client/`, `cmd/proxy` | 2 |
+| C1 | Capture SDK and proxy | Client library built ([client.md](client.md)), proxy built for non-streaming Anthropic Messages ([proxy.md](proxy.md)) | `client/`, `cmd/proxy`, `internal/proxy` | 2 |
 | C2 | Ingest API | Built, needs org scope | `internal/ingest`, `internal/api` | 1 |
 | C3 | Identity and API keys | New | `internal/auth` | 1 and 4 |
 | C4 | Events and rollups | Built, org-scoped | `internal/rollup`, `internal/storage` | 1 |

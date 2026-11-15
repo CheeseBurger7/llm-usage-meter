@@ -73,7 +73,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   endpoint, retry with exponential backoff, drop-oldest with a dropped
   counter, `Close` flushes. It must never block or fail the caller's LLM
   call. Tests with `httptest`.
-- [ ] **Proxy: Anthropic Messages pass-through.** New `cmd/proxy`: reverse
+- [~] (PR #25) **Proxy: Anthropic Messages pass-through.** New `cmd/proxy`: reverse
   proxy that forwards requests and responses unchanged, reads the `usage`
   block from non-streaming responses and records an event through the client
   package. Tenant and feature come from `X-Meter-Tenant` and
