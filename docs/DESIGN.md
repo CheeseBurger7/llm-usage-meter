@@ -24,7 +24,7 @@ everything on the bottom row through one query API.
 
 | # | Component | Status | Package | Milestone |
 |---|---|---|---|---|
-| C1 | Capture SDK and proxy | Client library built ([client.md](client.md)), proxy built for non-streaming Anthropic Messages ([proxy.md](proxy.md)) | `client/`, `cmd/proxy`, `internal/proxy` | 2 |
+| C1 | Capture SDK and proxy | Client library built ([client.md](client.md)), proxy built for Anthropic Messages, streaming and non-streaming ([proxy.md](proxy.md)) | `client/`, `cmd/proxy`, `internal/proxy` | 2 |
 | C2 | Ingest API | Built, needs org scope | `internal/ingest`, `internal/api` | 1 |
 | C3 | Identity and API keys | New | `internal/auth` | 1 and 4 |
 | C4 | Events and rollups | Built, org-scoped | `internal/rollup`, `internal/storage` | 1 |
@@ -62,7 +62,8 @@ environment.
   completions and inference keys never reach the service. It fails open: a metering outage must never
   fail an LLM call. Build the proxy first, because one Go build serves every language.
 - **Risk:** streamed responses report usage in the event stream, so the proxy must read it without
-  buffering.
+  buffering. Handled for Anthropic Messages: the proxy scans the stream as it passes and keeps only
+  the usage events ([proxy.md](proxy.md#streamed-responses)).
 - **Trust:** the org runs the proxy and holds the ingest key, so the numbers are org-reported. A monthly
   reconciliation against the provider's own usage report shows any gap, whether from calls that bypassed
   the proxy or from wrong events. Provider totals are pulled with an optional usage read key that can

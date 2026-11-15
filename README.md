@@ -6,7 +6,7 @@ teams selling AI features bill their own customers for LLM usage.
 > **Status:** work in progress. Ingestion, dedupe, hourly rollups and the rating library (per-model
 > rates, volume tiers, discounts) work today. The ingest API requires a scoped API key and stores
 > events and rollups per org, with a rate limit per key. A capture proxy records usage from
-> non-streaming Anthropic Messages calls. The query and cost API and the dashboard are planned (see [What I'd do next](#what-id-do-next) and
+> Anthropic Messages calls, streamed or not. The query and cost API and the dashboard are planned (see [What I'd do next](#what-id-do-next) and
 > [docs/DESIGN.md](docs/DESIGN.md)).
 
 ## Problem
@@ -110,7 +110,7 @@ service. The full component design, with all ten components, is in
 | API key generation, verification, admin commands | `internal/auth`, `cmd/server` | [docs/api-keys.md](docs/api-keys.md) |
 | HTTP authentication middleware | `internal/auth`, `internal/api` | [docs/api-keys.md](docs/api-keys.md#http-authentication) |
 | Go client library: batching, retries, bounded queue | `client` | [docs/client.md](docs/client.md) |
-| Capture proxy: Anthropic Messages, non-streaming | `cmd/proxy`, `internal/proxy` | [docs/proxy.md](docs/proxy.md) |
+| Capture proxy: Anthropic Messages, streaming and non-streaming | `cmd/proxy`, `internal/proxy` | [docs/proxy.md](docs/proxy.md) |
 
 ## Design decisions and tradeoffs
 
@@ -165,7 +165,7 @@ Six milestones, in order. The product is sellable at the end of the fourth. The 
 1. **Multi-tenant core:** orgs and scoped API keys, events and rollups keyed by org, cache token
    and feature fields, a batch ingest endpoint and per-key rate limits.
 2. **Capture:** a proxy the customer runs next to their app, built on the Go client library
-   (done). It reads token usage from non-streaming Anthropic responses (done); streaming and
+   (done). It reads token usage from Anthropic responses, streamed or not (done);
    OpenAI-compatible responses are next. It fails open.
 3. **Read side:** versioned cost and price books per org, and `GET /v1/usage` and `GET /v1/cost`
    returning cost, revenue and margin. Volume tiers apply per calendar month.

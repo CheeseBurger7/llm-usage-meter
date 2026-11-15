@@ -5,9 +5,9 @@ runs it next to their app and points the provider's base URL at it. It forwards 
 response unchanged, reads the token counts from the response and sends one event per call through
 the [Go client library](client.md).
 
-Today it meters **non-streaming Anthropic Messages calls** (`POST /v1/messages`). Streamed
-responses and the OpenAI-compatible shape are the next two tasks in [TASKS.md](TASKS.md); until
-then those calls are forwarded but not metered.
+Today it meters **Anthropic Messages calls** (`POST /v1/messages`), streamed or not. The
+OpenAI-compatible shape is the next task in [TASKS.md](TASKS.md); until then those calls are
+forwarded but not metered.
 
 ## Run it
 
@@ -49,7 +49,8 @@ the proxy itself.
 
 ## What is recorded
 
-One event per call that the provider answered with `200` and a JSON message:
+One event per call that the provider answered with `200` and a JSON message or a complete event
+stream. For a JSON message:
 
 | Event field | Source |
 | --- | --- |
@@ -71,10 +72,41 @@ The field names were checked against the provider's
 cache tokens. That is the meaning the event schema uses (Q14), and the counts are copied as they
 are.
 
+## Streamed responses
+
+With `"stream": true` the provider answers with server-sent events (`text/event-stream`). The
+proxy passes each chunk to the caller as it arrives and scans the same bytes for three events:
+
+| Stream event | What the proxy reads |
+| --- | --- |
+| `message_start` | `message.id` (the `event_id`), `message.model`, and the first counts in `message.usage` |
+| `message_delta` | `usage`, with the same four count names as above. Each count that is present replaces the value seen so far |
+| `message_stop` | Nothing: it marks the stream as complete, and `latency_ms` ends here |
+
+The provider's [Streaming messages](https://platform.claude.com/docs/en/build-with-claude/streaming)
+page, checked on 2026-11-15, states that the counts in `message_delta` are cumulative, so they are
+taken as totals and never added up. A `message_delta` may carry only `output_tokens`; the input
+and cache counts then stay as `message_start` reported them. `ping`, content events and event
+types the proxy does not know are ignored.
+
+One event is recorded when the stream reaches `message_stop`. A stream that does not get there is
+forwarded like any other and not metered (Q19): the caller hung up, the connection dropped, or the
+provider sent an `error` event.
+
+**Fallback models.** When the provider retries a declined call on a fallback model in the middle
+of a stream, `message_start` has already named the model that declined. The proxy takes the
+serving model from the `fallback_message` entry of `usage.iterations` in the final
+`message_delta`, as the provider's
+[Refusals and fallback](https://platform.claude.com/docs/en/build-with-claude/refusals-and-fallback)
+page describes. The event then holds the serving model and its counts. The declined attempt can be
+billed by the provider too and is not recorded yet, for streamed and non-streamed calls alike;
+that is a task of its own in [TASKS.md](TASKS.md).
+
 ## What is never recorded
 
 - **Request and response bodies.** The response is decoded into a struct with only `type`, `id`,
-  `model` and the four usage counts. Nothing else is kept, logged or sent.
+  `model` and the four usage counts. Nothing else is kept, logged or sent. From a stream, only
+  the data of `message_start` and `message_delta` events is decoded, and neither carries content.
 - **Provider keys.** The proxy forwards the caller's headers and never reads them. Log lines hold
   a method, a path without its query string, and a reason; no header values.
 - **The ingest key** goes only to the metering service, never to the provider.
@@ -91,10 +123,12 @@ answered, logged with its reason and counted (`calls_skipped` in the shutdown lo
 | Case | Why |
 | --- | --- |
 | No `X-Meter-Tenant` header | An event needs a tenant. See Q18 |
-| Streamed response (`text/event-stream`) | Next task |
-| `200` that is not a JSON message with `id`, `model` and `usage` | Nothing to read |
+| Stream that ended before `message_stop`, or held an `error` event | The final counts were never seen. See Q19 |
+| Stream without `event:` lines, or with a usage event over 1 MiB | The proxy finds usage events by their event name |
+| Compressed stream (`Content-Encoding` set) | The proxy cannot scan it |
+| `200` that is neither JSON nor an event stream, or has no `id`, `model` and `usage` | Nothing to read |
 | Response larger than 16 MiB | Capture limit, see below |
-| `Content-Encoding` other than gzip | The proxy cannot read it |
+| JSON response with a `Content-Encoding` other than gzip | The proxy cannot read it |
 | Caller disconnected before the end | The usage block was never seen |
 
 Not counted, because they carry no usage: provider errors (any status other than `200`) and every
@@ -120,6 +154,16 @@ through the batch results, so batch calls are not metered.
   full generation time to time-to-first-byte. The cost is memory: up to one response per in-flight
   call, capped at 16 MiB each. A streaming JSON scanner would remove the copy and is worth doing
   if memory shows up in practice.
+- **A stream is scanned as it passes, not copied.** The scanner keeps the current line up to 128
+  bytes, enough to read an `event:` name, and the full data of usage events only. Memory per
+  streamed call stays in the kilobytes however long the answer is, and no chunk is held back, so
+  time to first byte is the provider's (`TestStreamFirstByteIsNotDelayed`). The cost is a
+  dependency on the provider's framing: the `event:` line must come before its `data:` line, as
+  the provider sends it. A stream framed differently is forwarded and counted as skipped.
+- **An unfinished stream is skipped, not recorded with partial counts** (Q19). Before
+  `message_stop` the proxy has the input counts but an output count that is still growing, so an
+  event would understate the call by an unknown amount. A skipped call is visible in the log, the
+  counter and reconciliation; a too-small event looks correct.
 - **A missing tenant header skips metering instead of failing the call** (Q18). Rejecting would
   let a metering mistake break the product. The cost is that untagged calls are invisible to
   billing until someone reads the proxy log; reconciliation against the provider's report shows
