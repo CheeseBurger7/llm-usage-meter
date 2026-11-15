@@ -81,7 +81,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   is the provider's response ID. Never log or store request or response
   bodies or inference keys. Fail open if metering is down. Verify usage field
   names against the current provider docs. Tests with a fake upstream.
-- [ ] **Proxy: streaming responses.** Read usage from server-sent events
+- [~] (PR #27) **Proxy: streaming responses.** Read usage from server-sent events
   while streaming through without buffering the whole response. Test that
   time to first byte is not delayed.
 - [ ] **Proxy: fallback attempts.** When the provider retries a declined
