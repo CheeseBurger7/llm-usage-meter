@@ -1,9 +1,9 @@
 // Package proxy is the capture proxy the customer runs next to their app.
 //
 // It forwards every request to the LLM provider and every response back
-// without changing them. For a successful, non-streaming Anthropic Messages
-// call it also reads the usage block of the response and records one usage
-// event. Only token counts and the caller's tags leave the proxy: request
+// without changing them. For a successful Anthropic Messages call, streamed
+// or not, it also reads the usage block of the response and records one
+// usage event. Only token counts and the caller's tags leave the proxy: request
 // and response bodies and provider keys are never stored, logged or sent to
 // the metering service.
 //
@@ -170,14 +170,18 @@ func (p *Proxy) inspect(resp *http.Response) error {
 	}
 	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	encoding := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Encoding")))
+	streamed := mediaType == "text/event-stream"
+	plain := encoding == "" || encoding == "identity"
 	switch {
-	case mediaType == "text/event-stream":
-		p.skip("streamed responses are not metered yet")
-	case mediaType != "application/json":
-		p.skip("response is not JSON")
+	case !streamed && mediaType != "application/json":
+		p.skip("response is neither JSON nor an event stream")
 	case c.tenant == "":
 		p.skip("request has no " + TenantHeader + " header")
-	case encoding != "" && encoding != "identity" && encoding != "gzip":
+	case streamed && !plain:
+		p.skip("compressed event streams are not supported")
+	case streamed:
+		resp.Body = &streamCapture{body: resp.Body, p: p, c: c}
+	case !plain && encoding != "gzip":
 		p.skip("response content encoding is not supported")
 	default:
 		resp.Body = &capture{body: resp.Body, p: p, c: c, gzip: encoding == "gzip"}
@@ -263,12 +267,18 @@ func (b *capture) finish() {
 		b.p.skip("response has no message id, model or usage block")
 		return
 	}
-	ev.TenantID = b.c.tenant
-	ev.Feature = b.c.feature
-	ev.LatencyMs = b.latency.Milliseconds()
-	ev.Timestamp = b.c.start.UTC()
-	b.p.rec.Record(ev)
-	b.p.recorded.Add(1)
+	b.p.record(b.c, ev, b.latency)
+}
+
+// record adds what the proxy knows about the call to an event read from
+// the response and hands it to the Recorder.
+func (p *Proxy) record(c *call, ev client.Event, latency time.Duration) {
+	ev.TenantID = c.tenant
+	ev.Feature = c.feature
+	ev.LatencyMs = latency.Milliseconds()
+	ev.Timestamp = c.start.UTC()
+	p.rec.Record(ev)
+	p.recorded.Add(1)
 }
 
 func gunzip(data []byte, limit int64) ([]byte, bool) {

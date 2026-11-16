@@ -81,9 +81,17 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   is the provider's response ID. Never log or store request or response
   bodies or inference keys. Fail open if metering is down. Verify usage field
   names against the current provider docs. Tests with a fake upstream.
-- [ ] **Proxy: streaming responses.** Read usage from server-sent events
+- [~] (PR #27) **Proxy: streaming responses.** Read usage from server-sent events
   while streaming through without buffering the whole response. Test that
   time to first byte is not delayed.
+- [ ] **Proxy: fallback attempts.** When the provider retries a declined
+  call on a fallback model, `usage.iterations` lists every attempt with its
+  own model and counts, and the provider can bill each one. The proxy records
+  only the serving attempt today. Record one event per billable attempt,
+  each with its own model, for streamed and non-streamed calls, with event
+  ids that stay unique and stable (the message id is shared by the attempts).
+  Verify against the provider's current refusals and fallback docs which
+  attempts are billed; never guess.
 - [ ] **Proxy: OpenAI-compatible chat completions.** Same behaviour for the
   chat completions response shape, streaming and non-streaming. Verify field
   names against the current provider docs.

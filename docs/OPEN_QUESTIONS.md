@@ -161,3 +161,11 @@ follow-up task instead of rewriting silently.
 - **Options:** forward the call and do not meter it, with a warning in the log and a skipped counter (a tagging mistake never breaks the customer's product; untagged usage is missing from billing until someone reads the log or reconciliation shows the gap) / refuse the call with `400` (no usage can go unbilled; a metering mistake now fails LLM calls, which the design rules out) / meter it under a configurable default tenant such as `unassigned` (nothing is lost and the gap is visible in the dashboard; one more setting, and cost lands on a tenant nobody can be billed for)
 - **Default applied:** Forward and do not meter. The proxy logs the reason without any header value and counts the call as skipped.
 - **Answer:**
+
+### Q19: What does the proxy record for a stream that never finishes?
+- **Status:** open
+- **Blocks:** nothing (default applied)
+- **Context:** A streamed call reports its final token counts in the last `message_delta`, just before `message_stop`. When the caller hangs up, the connection drops or the provider sends an `error` event, the proxy has seen the input counts from `message_start` but only a partial output count. The provider can still bill what it generated. The OpenAI-compatible streaming task inherits the choice.
+- **Options:** skip the call, log the reason and count it as skipped (no event with a known-wrong number; the usage is missing from billing until reconciliation shows the gap) / record what was seen so far (input tokens are billed to the tenant; output is understated by an unknown amount and the event looks complete) / record what was seen with a marker that it is partial (nothing hidden; needs a new event field, a migration and a rule for how statements treat partial events)
+- **Default applied:** Skip. The call is forwarded as it is, logged with its reason and counted in `calls_skipped`, the same as a non-streamed call the caller abandoned.
+- **Answer:**
