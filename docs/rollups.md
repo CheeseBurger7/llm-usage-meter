@@ -6,8 +6,10 @@ are UTC.
 
 - **`org_id` leads the primary key**, so two orgs that use the same `tenant_id` and model never
   share a row, and every per-org read is a prefix scan of the key. It references `orgs(id)`.
-- **`provider` and `feature` are dimensions**, copied from the event byte for byte (Q13). `feature`
-  is `''` when the event did not set one, because a primary key column cannot be `NULL`.
+- **`provider` and `feature` are dimensions**, copied from the stored event. Ingest lowercases
+  `provider` (Q13), so events sent as `Anthropic` and `anthropic` share a row; `feature` is byte
+  for byte. `feature` is `''` when the event did not set one, because a primary key column cannot
+  be `NULL`.
 - **The three token sums do not overlap.** `input_tokens` leaves out cache tokens (Q14), so total
   input for a row is `input_tokens + cache_read_tokens + cache_write_tokens`.
 
@@ -46,7 +48,8 @@ large `events` table that first startup scan re-rolls every hour that has events
 
 - `internal/rollup/rollup_integration_test.go`: idempotent re-runs and late events; two orgs with
   the same `event_id`, tenant, provider, model and feature get separate rows; provider and feature
-  each split a row; cache tokens are summed; a new event in one org makes the hour stale without
+  each split a row; providers that differ only in case share a row; cache tokens are summed; a
+  new event in one org makes the hour stale without
   changing the other org's numbers.
 - `internal/api/isolation_integration_test.go`: the milestone 1 acceptance test. Events ingested
   over HTTP by two orgs are rolled up with `BackfillStale`, and each org's `hourly_usage` rows

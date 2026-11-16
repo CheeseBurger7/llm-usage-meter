@@ -169,3 +169,11 @@ follow-up task instead of rewriting silently.
 - **Options:** skip the call, log the reason and count it as skipped (no event with a known-wrong number; the usage is missing from billing until reconciliation shows the gap) / record what was seen so far (input tokens are billed to the tenant; output is understated by an unknown amount and the event looks complete) / record what was seen with a marker that it is partial (nothing hidden; needs a new event field, a migration and a rule for how statements treat partial events)
 - **Default applied:** Skip. The call is forwarded as it is, logged with its reason and counted in `calls_skipped`, the same as a non-streamed call the caller abandoned.
 - **Answer:**
+
+### Q20: Does lowercasing `provider` cover non-ASCII letters?
+- **Status:** open
+- **Blocks:** nothing (default applied)
+- **Context:** Q13 says ingest lowercases `provider` but not which letters that covers. Go's `strings.ToLower` folds every Unicode letter; an ASCII-only fold leaves `É` and `é` as two providers. Whatever ingest does, the price book loader must do the same when it gains a provider key, and so must any SQL or dashboard code that compares providers, or a rate lookup can miss. For a few letters the lowercase form is longer in bytes, so the 256 byte limit is checked after lowercasing. Changing the rule later means rewriting stored values.
+- **Options:** Unicode lowercase with `strings.ToLower` (the plain reading of Q13; every other component has to reproduce Go's mapping, and Postgres `lower()` depends on the database collation) / ASCII-only lowercase (the same result in every language and in SQL; non-ASCII names stay case-sensitive) / reject non-ASCII providers (nothing to disagree about; a breaking validation rule for anyone who sends one)
+- **Default applied:** Unicode lowercase with `strings.ToLower`, applied only in ingest. Real provider names are ASCII, where all three options store the same value.
+- **Answer:**

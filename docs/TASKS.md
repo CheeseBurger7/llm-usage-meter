@@ -65,7 +65,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   appear under the other in `events` or `hourly_usage`. Also covers a
   revoked key (401) and a `read` key on the ingest route (403). This is the
   milestone's "done when" in DESIGN.md.
-- [ ] **Events: case-insensitive provider (Q13).** Lowercase `provider` in
+- [~] (PR #29) **Events: case-insensitive provider (Q13).** Lowercase `provider` in
   ingest before validation, `sameAs` and storage, for both the single and
   batch endpoints. No trimming or other normalization. Tests: `Anthropic`
   and `anthropic` produce one `hourly_usage` row, and a retry that differs

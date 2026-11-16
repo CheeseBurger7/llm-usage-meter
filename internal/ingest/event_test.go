@@ -124,3 +124,49 @@ func TestSameAsIgnoresTimezone(t *testing.T) {
 		t.Fatal("same instant in a different zone should compare equal")
 	}
 }
+
+// Only provider is case-insensitive, and only its case is normalized.
+func TestNormalizedLowercasesProviderOnly(t *testing.T) {
+	ev := validEvent()
+	ev.TenantID, ev.Provider, ev.Model, ev.Feature = "Tenant-A", " Anthropic\tÉ ", "Claude-Sonnet", "Chat"
+	got := ev.normalized()
+	if got.Provider != " anthropic\té " {
+		t.Fatalf("provider = %q; want lowercase with whitespace kept", got.Provider)
+	}
+	if got.TenantID != ev.TenantID || got.Model != ev.Model || got.Feature != ev.Feature {
+		t.Fatalf("normalized changed another label: %+v", got)
+	}
+	if ev.Provider != " Anthropic\tÉ " {
+		t.Fatal("normalized changed its receiver")
+	}
+}
+
+// A re-send that differs only in the case of provider is the same event once
+// both are normalized. Without normalizing, sameAs still tells them apart.
+func TestSameAsProviderCaseAfterNormalizing(t *testing.T) {
+	a, b := validEvent(), validEvent()
+	b.Provider = "Anthropic"
+	if !a.normalized().sameAs(b.normalized()) {
+		t.Fatal("providers differing only in case should compare equal after normalizing")
+	}
+	b.Provider = "anthropic "
+	if a.normalized().sameAs(b.normalized()) {
+		t.Fatal("a trailing space should still be a different provider")
+	}
+}
+
+// Ingest lowercases before it validates, so the length limit applies to the
+// stored form. "Ⱥ" is two bytes and its lowercase "ⱥ" is three. Validation
+// fails before the database is used, so a Store without one is enough.
+func TestIngestValidatesTheLowercasedProvider(t *testing.T) {
+	ev := validEvent()
+	ev.Provider = strings.Repeat("Ⱥ", maxIDLen/2)
+	if err := ev.Validate(); err != nil {
+		t.Fatalf("as sent the provider is within the limit: %v", err)
+	}
+	_, err := NewStore(nil).Ingest(t.Context(), [16]byte{1}, ev)
+	var verr *ValidationError
+	if !errors.As(err, &verr) || verr.Fields["provider"] == "" {
+		t.Fatalf("err = %v; want a validation error on provider", err)
+	}
+}
