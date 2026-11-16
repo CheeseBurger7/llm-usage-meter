@@ -3,7 +3,8 @@
 `cmd/proxy` records usage from real LLM calls without the app writing event code. The customer
 runs it next to their app and points the provider's base URL at it. It forwards every request and
 response unchanged, reads the token counts from the response and sends one event per call through
-the [Go client library](client.md).
+the [Go client library](client.md). A call that the provider retried on a fallback model can give
+more than one event, see [Fallback attempts](#fallback-attempts).
 
 Today it meters **Anthropic Messages calls** (`POST /v1/messages`), streamed or not. The
 OpenAI-compatible shape is the next task in [TASKS.md](TASKS.md); until then those calls are
@@ -93,19 +94,57 @@ One event is recorded when the stream reaches `message_stop`. A stream that does
 forwarded like any other and not metered (Q19): the caller hung up, the connection dropped, or the
 provider sent an `error` event.
 
-**Fallback models.** When the provider retries a declined call on a fallback model in the middle
-of a stream, `message_start` has already named the model that declined. The proxy takes the
-serving model from the `fallback_message` entry of `usage.iterations` in the final
-`message_delta`, as the provider's
+## Fallback attempts
+
+The provider can retry a call that a model declined on a fallback model, inside the same request.
+The response is still one message with one `id`, but more than one model ran. The rules below
+come from the provider's
 [Refusals and fallback](https://platform.claude.com/docs/en/build-with-claude/refusals-and-fallback)
-page describes. The event then holds the serving model and its counts. The declined attempt can be
-billed by the provider too and is not recorded yet, for streamed and non-streamed calls alike;
-that is a task of its own in [TASKS.md](TASKS.md).
+page, checked on 2026-11-16:
+
+- `usage.iterations` lists every attempt with its own `model` and the four counts. A model that
+  declined is a `message` entry; the model that produced the returned message is the
+  `fallback_message` entry.
+- The top-level `model` and `usage` counts describe only the attempt that produced the returned
+  message. Tokens from different models are never summed into one field.
+- Every attempt that produced output is billed separately, at the rates of the model that ran it,
+  including one that declined partway through.
+- An attempt that declined before any output is billed only when its refusal category is one of
+  the billed ones. Its tokens are listed in `usage.iterations` either way.
+
+The proxy records, for streamed and non-streamed calls alike:
+
+| Attempt | Event | `event_id` |
+| --- | --- | --- |
+| The one that produced the returned message | Yes, from the top-level `model` and `usage`, as for any call | the message `id` |
+| Declined after producing output (`message` entry with `output_tokens` above 0) | Yes, with the entry's own `model` and counts | `<message id>/attempt-<n>`, where `n` is the entry's position in `usage.iterations`, counted from 1 |
+| Declined before any output (`message` entry with `output_tokens` of 0) | No, see below | |
+
+All events of one call carry the same `tenant_id`, `feature` and `timestamp`. `latency_ms` is the
+whole call's on the serving event and `0` on the others: the provider reports no duration per
+attempt, and repeating the call's latency would count it several times in the hourly sums.
+
+In a stream, the entries are read from the last `message_delta` that carries `usage.iterations`.
+When the decline happened in the middle of the stream, `message_start` has already named the model
+that declined, so the serving model is taken from the `fallback_message` entry.
+
+`usage.iterations` is read only when it holds a `fallback_message` entry. Other features use the
+same array for other things, and a `message` entry there is not a declined attempt.
+
+**Not recorded: an attempt that declined before any output.** Whether the provider bills it
+depends on the refusal category, which is not in the usage block, and the provider states that
+the list of billed categories may change. The proxy does not guess: the attempt gives no event
+and the proxy logs how many it left out. Where such an attempt was billed, the tenant is
+under-billed by its input tokens until reconciliation shows the gap. For the same reason a call
+that ended in a refusal with no fallback is still recorded with its counts, as before this change,
+even where the provider does not bill it. Both are Q21 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md)
+and a task in [TASKS.md](TASKS.md).
 
 ## What is never recorded
 
 - **Request and response bodies.** The response is decoded into a struct with only `type`, `id`,
-  `model` and the four usage counts. Nothing else is kept, logged or sent. From a stream, only
+  `model`, the four usage counts and, per entry of `usage.iterations`, its `type`, `model` and
+  counts. Nothing else is kept, logged or sent. From a stream, only
   the data of `message_start` and `message_delta` events is decoded, and neither carries content.
 - **Provider keys.** The proxy forwards the caller's headers and never reads them. Log lines hold
   a method, a path without its query string, and a reason; no header values.
@@ -172,6 +211,13 @@ through the batch results, so batch calls are not metered.
   reach it can send usage for any tenant under the org's ingest key. It holds no provider key, so
   it cannot be used to make free LLM calls. Set `LISTEN_ADDR` to expose it to other containers or
   hosts on a private network.
+- **A declined attempt gets the message id plus its position, `<message id>/attempt-<n>`.** The
+  attempts of a call share one message id, and the service dedupes on `event_id`, so each needs
+  its own. The serving attempt keeps the bare message id: a call without a fallback has the same
+  id as before, and a response seen by an older proxy dedupes against the same call seen by a
+  newer one. The position in `usage.iterations` is the only per-attempt value the provider gives
+  that is the same every time the response is read; a hash of the counts would also be stable but
+  says nothing to someone reading a statement.
 - **`event_id` is the provider's message id.** It is unique per call and identical if the same
   response is ever seen twice, so no id has to be invented. The service treats ids as unique per
   org; when a second provider is added its ids could in theory collide, which the
