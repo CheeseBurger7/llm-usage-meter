@@ -3,7 +3,8 @@
 // It forwards every request to the LLM provider and every response back
 // without changing them. For a successful Anthropic Messages call, streamed
 // or not, it also reads the usage block of the response and records one
-// usage event. Only token counts and the caller's tags leave the proxy: request
+// usage event, plus one for each attempt on another model that declined
+// after producing output. Only token counts and the caller's tags leave the proxy: request
 // and response bodies and provider keys are never stored, logged or sent to
 // the metering service.
 //
@@ -60,7 +61,7 @@ type Config struct {
 	// Upstream is the provider's base URL, for example
 	// https://api.anthropic.com. Required.
 	Upstream *url.URL
-	// Recorder receives one event per metered call. Required.
+	// Recorder receives the events of each metered call. Required.
 	Recorder Recorder
 	// Log receives operational messages. Bodies, header values and keys are
 	// never logged. Nil discards.
@@ -75,7 +76,8 @@ type Config struct {
 // Stats counts what happened to calls that were candidates for metering:
 // POST /v1/messages answered with 200.
 type Stats struct {
-	// Recorded counts calls handed to the Recorder.
+	// Recorded counts calls handed to the Recorder. A call that fell back
+	// to another model counts once, however many events it produced.
 	Recorded uint64
 	// Skipped counts calls that were forwarded but could not be metered.
 	Skipped uint64
@@ -262,23 +264,43 @@ func (b *capture) finish() {
 			return
 		}
 	}
-	ev, ok := anthropicEvent(data)
+	m, ok := anthropicEvents(data)
 	if !ok {
 		b.p.skip("response has no message id, model or usage block")
 		return
 	}
-	b.p.record(b.c, ev, b.latency)
+	b.p.record(b.c, m, b.latency)
 }
 
-// record adds what the proxy knows about the call to an event read from
-// the response and hands it to the Recorder.
-func (p *Proxy) record(c *call, ev client.Event, latency time.Duration) {
-	ev.TenantID = c.tenant
-	ev.Feature = c.feature
-	ev.LatencyMs = latency.Milliseconds()
-	ev.Timestamp = c.start.UTC()
-	p.rec.Record(ev)
+// metered is what was read from one response: the event of the attempt
+// that produced the returned message, then one event for each attempt that
+// declined after producing output.
+type metered struct {
+	serving  client.Event
+	declined []client.Event
+	// leftOut counts declined attempts that were not recorded because the
+	// usage block cannot tell whether the provider bills them.
+	leftOut int
+}
+
+// record adds what the proxy knows about the call to the events read from
+// the response and hands them to the Recorder.
+//
+// The latency of the call goes on the serving event only. The provider
+// does not report a duration per attempt, and repeating the call's latency
+// on every event would count it several times in the hourly sums.
+func (p *Proxy) record(c *call, m metered, latency time.Duration) {
+	m.serving.LatencyMs = latency.Milliseconds()
+	for _, ev := range append([]client.Event{m.serving}, m.declined...) {
+		ev.TenantID = c.tenant
+		ev.Feature = c.feature
+		ev.Timestamp = c.start.UTC()
+		p.rec.Record(ev)
+	}
 	p.recorded.Add(1)
+	if m.leftOut > 0 {
+		p.log.Info("proxy: declined attempts without output were not recorded", "attempts", m.leftOut)
+	}
 }
 
 func gunzip(data []byte, limit int64) ([]byte, bool) {
@@ -306,24 +328,31 @@ type anthropicMessage struct {
 		// Both cache counts may be null, which decodes to 0.
 		CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
 		CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+		// Iterations lists every attempt when the provider retried a
+		// declined call on a fallback model.
+		Iterations []iteration `json:"iterations"`
 	} `json:"usage"`
 }
 
-// anthropicEvent maps a Messages API response to a usage event.
+// anthropicEvents maps a Messages API response to its usage events.
 //
 // The provider documents total input as input_tokens +
 // cache_creation_input_tokens + cache_read_input_tokens, so input_tokens
 // already excludes cache tokens, which is the meaning the event schema uses
 // (OPEN_QUESTIONS Q14). The counts are copied without subtraction.
-func anthropicEvent(body []byte) (client.Event, bool) {
+//
+// After a fallback the top-level model and counts describe only the attempt
+// that produced the returned message; the attempts that declined are read
+// from usage.iterations.
+func anthropicEvents(body []byte) (metered, bool) {
 	var m anthropicMessage
 	if err := json.Unmarshal(body, &m); err != nil {
-		return client.Event{}, false
+		return metered{}, false
 	}
 	if m.Type != "message" || m.ID == "" || m.Model == "" || m.Usage == nil {
-		return client.Event{}, false
+		return metered{}, false
 	}
-	return client.Event{
+	out := metered{serving: client.Event{
 		// The provider's id is stable for the call, so a re-sent event dedupes.
 		EventID:          m.ID,
 		Provider:         ProviderAnthropic,
@@ -332,5 +361,7 @@ func anthropicEvent(body []byte) (client.Event, bool) {
 		OutputTokens:     m.Usage.OutputTokens,
 		CacheReadTokens:  m.Usage.CacheReadInputTokens,
 		CacheWriteTokens: m.Usage.CacheCreationInputTokens,
-	}, true
+	}}
+	out.declined, out.leftOut = declinedAttempts(m.ID, m.Usage.Iterations)
+	return out, true
 }

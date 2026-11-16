@@ -38,8 +38,15 @@ var sseWant = client.Event{
 	InputTokens: 10682, OutputTokens: 510, CacheReadTokens: 50, CacheWriteTokens: 40,
 }
 
-// meterStream feeds body to an sseMeter in pieces of the given size.
+// meterStream feeds body to an sseMeter in pieces of the given size and
+// returns the event of the serving attempt.
 func meterStream(body string, piece int) (client.Event, string) {
+	m, reason := meterStreamAll(body, piece)
+	return m.serving, reason
+}
+
+// meterStreamAll is meterStream with the declined attempts as well.
+func meterStreamAll(body string, piece int) (metered, string) {
 	var s sseMeter
 	for len(body) > 0 {
 		n := min(piece, len(body))
@@ -147,7 +154,7 @@ func TestStreamMeterMemoryIsBounded(t *testing.T) {
 		t.Fatalf("meter holds %d bytes after 8 MiB of content", c)
 	}
 	s.write([]byte(sseDelta + sseStop))
-	if got, reason := s.result(); reason != "" || got != sseWant {
+	if got, reason := s.result(); reason != "" || got.serving != sseWant {
 		t.Fatalf("event = %+v, reason = %q", got, reason)
 	}
 }

@@ -24,8 +24,6 @@ const (
 	eventMessageDelta = "message_delta"
 	eventMessageStop  = "message_stop"
 	eventError        = "error"
-
-	iterationFallback = "fallback_message"
 )
 
 // streamUsage is the usage block of a stream event. A count that is absent
@@ -35,12 +33,9 @@ type streamUsage struct {
 	OutputTokens             *int64 `json:"output_tokens"`
 	CacheCreationInputTokens *int64 `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     *int64 `json:"cache_read_input_tokens"`
-	// Iterations lists every model that ran when the provider retried a
-	// declined call on a fallback model. Only the serving model is read.
-	Iterations []struct {
-		Type  string `json:"type"`
-		Model string `json:"model"`
-	} `json:"iterations"`
+	// Iterations lists every attempt when the provider retried a declined
+	// call on a fallback model.
+	Iterations []iteration `json:"iterations"`
 }
 
 // streamEvent is the part of a message_start or message_delta event the
@@ -68,11 +63,12 @@ type sseMeter struct {
 	data     []byte // its data, kept for usage events only
 	dataOver bool
 
-	ev        client.Event
-	haveUsage bool
-	stopped   bool // message_stop seen: the stream is complete
-	errored   bool // the provider sent an error event
-	unread    bool // a usage event could not be read
+	ev         client.Event
+	iterations []iteration // the last usage.iterations seen
+	haveUsage  bool
+	stopped    bool // message_stop seen: the stream is complete
+	errored    bool // the provider sent an error event
+	unread     bool // a usage event could not be read
 }
 
 func usageEvent(name string) bool {
@@ -179,6 +175,9 @@ func (s *sseMeter) apply(u *streamUsage) {
 	set(&s.ev.OutputTokens, u.OutputTokens)
 	set(&s.ev.CacheWriteTokens, u.CacheCreationInputTokens)
 	set(&s.ev.CacheReadTokens, u.CacheReadInputTokens)
+	if len(u.Iterations) > 0 {
+		s.iterations = u.Iterations
+	}
 	// After a fallback in the middle of the stream, message_start named
 	// the model that declined; the counts belong to the one that served.
 	for _, it := range u.Iterations {
@@ -188,20 +187,22 @@ func (s *sseMeter) apply(u *streamUsage) {
 	}
 }
 
-// result returns the event for a finished stream, or why there is none.
-func (s *sseMeter) result() (client.Event, string) {
+// result returns the events for a finished stream, or why there are none.
+func (s *sseMeter) result() (metered, string) {
 	switch {
 	case s.unread:
-		return client.Event{}, "a usage event in the stream could not be read"
+		return metered{}, "a usage event in the stream could not be read"
 	case s.errored:
-		return client.Event{}, "the provider sent an error in the stream"
+		return metered{}, "the provider sent an error in the stream"
 	case !s.stopped:
-		return client.Event{}, "stream ended before message_stop"
+		return metered{}, "stream ended before message_stop"
 	case s.ev.EventID == "" || s.ev.Model == "" || !s.haveUsage:
-		return client.Event{}, "stream has no message id, model or usage"
+		return metered{}, "stream has no message id, model or usage"
 	}
 	s.ev.Provider = ProviderAnthropic
-	return s.ev, ""
+	m := metered{serving: s.ev}
+	m.declined, m.leftOut = declinedAttempts(s.ev.EventID, s.iterations)
+	return m, ""
 }
 
 // streamCapture passes an event stream through and feeds the same bytes to
@@ -229,12 +230,12 @@ func (b *streamCapture) Read(dst []byte) (int, error) {
 func (b *streamCapture) Close() error {
 	err := b.body.Close()
 	b.once.Do(func() {
-		ev, reason := b.meter.result()
+		m, reason := b.meter.result()
 		if reason != "" {
 			b.p.skip(reason)
 			return
 		}
-		b.p.record(b.c, ev, b.latency)
+		b.p.record(b.c, m, b.latency)
 	})
 	return err
 }
