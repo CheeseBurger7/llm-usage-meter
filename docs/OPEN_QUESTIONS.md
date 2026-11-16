@@ -139,20 +139,20 @@ follow-up task instead of rewriting silently.
 - **Answer:** Keep the default: one statement per event, and a database failure returns `500` for the whole request. Re-sending the full batch is always safe; events already stored come back as `duplicate`. How the batch reaches Postgres is internal, so it can switch to a multi-row insert later without changing the API: the request, the per-event statuses and the retry rule stay the same. Revisit if load generator results show batch latency or database load is a problem.
 
 ### Q16: What does the ingest rate limit count, and what is the default?
-- **Status:** open
+- **Status:** answered
 - **Blocks:** nothing (default applied)
 - **Context:** The rate limit task says "token bucket per API key" with a configurable limit, but not whether a token is a request or an event, nor the default. A batch request holds up to 500 events, so the two units differ by up to 500 times. The client library will be written against whichever is chosen.
 - **Options:** count requests (decided before the body is read, simple to explain, but a batch of 500 costs the same as one event) / count events (matches database work, but the body must be read and parsed before refusing, and a batch larger than the remaining tokens needs a rule: refuse it whole or accept part)
 - **Default applied:** Requests. 100 per second per key with a burst of 100, set by `INGEST_RATE_LIMIT_RPS` and `INGEST_RATE_LIMIT_BURST`; `0` turns it off. The limit is on by default so a deployment that sets nothing is still protected. It is per process: with N replicas a key can reach N times the limit.
-- **Answer:**
+- **Answer:** Keep the default: the limit counts requests, 100 per second per API key with a burst of 100, on by default. Both numbers are requests, not events: the rate is the sustained refill, and the burst is how many requests an idle key can send back to back. Batch size is a separate limit of up to 500 events per request, so a key sending full batches can reach about 50,000 events per second. Counting requests lets the server refuse before reading the body and needs no rule for partial batches. The client library batches events, and Q15 measured about 0.2 s for a 500-event batch, so database load is not the bottleneck yet. Revisit with a separate events-per-second limit if load generator results show the database under strain.
 
 ### Q17: How long does the client library retry a batch?
-- **Status:** open
+- **Status:** answered
 - **Blocks:** nothing (default applied)
 - **Context:** The client task says "retry with exponential backoff" and "drop-oldest with a dropped counter" but not when a batch that keeps failing is given up. The proxy and the load generator inherit the choice, and it decides how many events an outage of the service costs a customer.
 - **Options:** no attempt limit, the batch in flight is retried until the service answers and the queue (10000 events by default) is the only bound, dropping its oldest when full (an outage shorter than the time to fill the queue loses nothing; one batch can stay in flight for the whole outage, and `Close` needs a deadline) / give up after N attempts and count the batch as dropped (simple to explain, a stuck batch never holds up newer ones, but an outage longer than a few backoff steps discards batch after batch that the queue had room to keep)
 - **Default applied:** No attempt limit. Waits grow from 200 ms to 30 s, with `Retry-After` honoured up to one minute. Only `429`, `408`, `5xx` and transport errors are retried; `400`, `401`, `403` and `413` count the batch as rejected at once, so a revoked key does not retry forever. `Close(ctx)` drops and counts what is unsent when `ctx` ends.
-- **Answer:**
+- **Answer:** Keep the default: no attempt limit. The batch in flight is retried with backoff from 200 ms to 30 s (`Retry-After` honoured up to one minute) until the service answers, and the 10000-event queue is the only bound, dropping its oldest events when full. An outage shorter than the time to fill the queue loses nothing. Only `429`, `408`, `5xx` and transport errors are retried; `400`, `401`, `403` and `413` reject the batch at once. `Close(ctx)` drops and counts whatever is unsent when `ctx` ends.
 
 ### Q18: What does the proxy do with a call that has no tenant header?
 - **Status:** open
