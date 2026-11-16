@@ -90,7 +90,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
 - [~] (PR #27) **Proxy: streaming responses.** Read usage from server-sent events
   while streaming through without buffering the whole response. Test that
   time to first byte is not delayed.
-- [ ] **Proxy: fallback attempts.** When the provider retries a declined
+- [~] (PR #31) **Proxy: fallback attempts.** When the provider retries a declined
   call on a fallback model, `usage.iterations` lists every attempt with its
   own model and counts, and the provider can bill each one. The proxy records
   only the serving attempt today. Record one event per billable attempt,
