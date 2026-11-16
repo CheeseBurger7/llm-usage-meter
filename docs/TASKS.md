@@ -98,6 +98,12 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   ids that stay unique and stable (the message id is shared by the attempts).
   Verify against the provider's current refusals and fallback docs which
   attempts are billed; never guess.
+- [ ] **Proxy: refusals billed by category (blocked by Q21).** The provider
+  bills a refusal that produced no output only for some refusal categories.
+  Today a declined fallback attempt without output gives no event, and a
+  call that ended in a refusal is recorded even where the provider does not
+  bill it. Record exactly the billed ones, streamed and non-streamed, once
+  Q21 settles where the category and the billed list come from.
 - [ ] **Proxy: OpenAI-compatible chat completions.** Same behaviour for the
   chat completions response shape, streaming and non-streaming. Verify field
   names against the current provider docs.
