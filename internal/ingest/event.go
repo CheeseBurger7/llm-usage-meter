@@ -4,6 +4,7 @@ package ingest
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -12,7 +13,10 @@ type Event struct {
 	EventID  string
 	TenantID string
 	// Provider is the LLM provider that served the call, for example
-	// "anthropic". It is a free-text label and is compared byte for byte.
+	// "anthropic". It is a free-text label and is case-insensitive: ingest
+	// lowercases it before validation, dedupe and storage, so "Anthropic" and
+	// "anthropic" are one provider and the stored value is the lowercase
+	// form. Nothing else is normalized, so " anthropic" is another provider.
 	Provider string
 	Model    string
 	// Feature is an optional label for the product feature that made the
@@ -86,13 +90,19 @@ func (e Event) Validate() error {
 	return nil
 }
 
-// normalized returns the event as Postgres will store it: UTC, microsecond precision.
+// normalized returns the event as Postgres will store it: provider in
+// lowercase, timestamp in UTC at microsecond precision. Ingest applies it
+// before Validate, so the length limit on provider is checked on the stored
+// form. TenantID, Model and Feature stay byte for byte.
 func (e Event) normalized() Event {
+	e.Provider = strings.ToLower(e.Provider)
 	e.Timestamp = e.Timestamp.UTC().Truncate(time.Microsecond)
 	return e
 }
 
 // sameAs compares every field; timestamps compare by instant, not by location.
+// Both events must be normalized, which makes the provider comparison
+// case-insensitive.
 func (e Event) sameAs(o Event) bool {
 	return e.EventID == o.EventID &&
 		e.TenantID == o.TenantID &&

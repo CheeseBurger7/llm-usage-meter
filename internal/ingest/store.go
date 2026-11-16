@@ -34,14 +34,16 @@ func NewStore(db gen.DBTX) *Store {
 // Ingest stores the event for the org, idempotently on (org, event_id). It
 // returns Created for a new event, Duplicate for an identical re-send, and
 // ErrConflict when the org already has that event_id with any different field
-// (including timestamp). Another org's events are never read or compared.
+// (including timestamp). Provider is lowercased first, so a re-send that
+// differs only in the case of provider is a Duplicate. Another org's events
+// are never read or compared.
 //
 // The org must come from the verified API key, never from the request payload.
 func (s *Store) Ingest(ctx context.Context, org auth.OrgID, ev Event) (Result, error) {
+	ev = ev.normalized()
 	if err := ev.Validate(); err != nil {
 		return 0, err
 	}
-	ev = ev.normalized()
 	orgID := pgtype.UUID{Bytes: org, Valid: true}
 
 	_, err := s.q.InsertEvent(ctx, gen.InsertEventParams{

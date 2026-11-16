@@ -251,6 +251,36 @@ func TestRollupKeepsOrgsProvidersAndFeaturesApart(t *testing.T) {
 	}
 }
 
+// Provider is case-insensitive (Q13): events sent as "Anthropic" and
+// "anthropic" land in one bucket, keyed by the lowercase form.
+func TestRollupMergesProviderCase(t *testing.T) {
+	ctx := context.Background()
+	pool := newPool(t)
+	s := newOrgStore(t, pool)
+	roller := rollup.New(pool, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	h := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	for i, provider := range []string{"Anthropic", "anthropic", "ANTHROPIC"} {
+		_, err := s.Ingest(ctx, s.org, ingest.Event{
+			EventID: fmt.Sprintf("e%d", i), TenantID: "t", Provider: provider, Model: "m",
+			InputTokens: 10, OutputTokens: 1, LatencyMs: 5, Timestamp: h.Add(time.Minute),
+		})
+		if err != nil {
+			t.Fatalf("ingest as %q: %v", provider, err)
+		}
+	}
+	if err := roller.Rollup(ctx, h, h.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if n := rowCount(t, pool); n != 1 {
+		t.Fatalf("hourly_usage has %d rows, want 1", n)
+	}
+	want := usage{Count: 3, In: 30, Out: 3, LatSum: 15, LatMax: 5}
+	if got, ok := usageFor(t, pool, s, "t", "m", h); !ok || got != want {
+		t.Fatalf("anthropic bucket = %+v (found %v), want %+v", got, ok, want)
+	}
+}
+
 // A late event in one org makes the hour stale even though the other org's
 // bucket for the same tenant and model is up to date, and re-rolling the hour
 // leaves the other org's numbers unchanged.

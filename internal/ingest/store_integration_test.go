@@ -132,6 +132,47 @@ func TestIngestStoresUsageFields(t *testing.T) {
 	}
 }
 
+// Provider is case-insensitive (Q13): a re-send that differs only in the case
+// of provider is a duplicate, whichever spelling arrived first, and the column
+// holds the lowercase form. Other labels stay byte for byte.
+func TestIngestProviderIsCaseInsensitive(t *testing.T) {
+	s, org, pool := newStore(t)
+	ctx := context.Background()
+
+	upper := event()
+	upper.Provider = "Anthropic"
+	if got, err := s.Ingest(ctx, org, upper); err != nil || got != ingest.Created {
+		t.Fatalf("first ingest = %v, %v; want Created", got, err)
+	}
+	for _, provider := range []string{"anthropic", "Anthropic", "ANTHROPIC"} {
+		ev := event()
+		ev.Provider = provider
+		if got, err := s.Ingest(ctx, org, ev); err != nil || got != ingest.Duplicate {
+			t.Fatalf("re-send as %q = %v, %v; want Duplicate", provider, got, err)
+		}
+	}
+
+	var stored string
+	if err := pool.QueryRow(ctx, `SELECT provider FROM events WHERE org_id = $1 AND event_id = $2`,
+		org, upper.EventID).Scan(&stored); err != nil || stored != "anthropic" {
+		t.Fatalf("stored provider = %q, %v; want anthropic", stored, err)
+	}
+
+	// Only case is normalized, and only for provider.
+	for name, mutate := range map[string]func(*ingest.Event){
+		"provider with a space": func(e *ingest.Event) { e.Provider = "anthropic " },
+		"model case":            func(e *ingest.Event) { e.Model = "Claude-Sonnet" },
+		"tenant case":           func(e *ingest.Event) { e.TenantID = "Tenant-A" },
+		"feature case":          func(e *ingest.Event) { e.Feature = "Chat" },
+	} {
+		ev := event()
+		mutate(&ev)
+		if _, err := s.Ingest(ctx, org, ev); !errors.Is(err, ingest.ErrConflict) {
+			t.Fatalf("%s: err = %v; want ErrConflict", name, err)
+		}
+	}
+}
+
 func TestIngestConflictOnAnyDifferingField(t *testing.T) {
 	mutations := map[string]func(*ingest.Event){
 		"tenant_id":          func(e *ingest.Event) { e.TenantID = "tenant-b" },

@@ -43,7 +43,7 @@ precision. Otherwise a re-sent event would never compare equal to its stored cop
 |---|---|---|
 | `event_id` | yes | 1 to 256 bytes. Unique per org |
 | `tenant_id` | yes | 1 to 256 bytes |
-| `provider` | yes | 1 to 256 bytes, for example `anthropic` |
+| `provider` | yes | 1 to 256 bytes, for example `anthropic`. Case-insensitive, stored in lowercase |
 | `model` | yes | 1 to 256 bytes |
 | `feature` | no | At most 256 bytes. Left out or `""` means not set |
 | `input_tokens` | no, default 0 | `>= 0`. Does not include cache tokens |
@@ -53,10 +53,18 @@ precision. Otherwise a re-sent event would never compare equal to its stored cop
 | `latency_ms` | no, default 0 | `>= 0` |
 | `timestamp` | yes | RFC 3339 |
 
-- **`provider`, `tenant_id`, `model` and `feature` are free-text labels.** They are stored and
-  compared byte for byte, with no trimming or case folding: `Anthropic` and `anthropic` are two
-  providers. Pick one spelling per provider and keep it. Whether the service should normalize
-  `provider` is Q13 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
+- **`tenant_id`, `model` and `feature` are free-text labels.** They are stored and compared byte
+  for byte, with no trimming or case folding: `Claude-Sonnet` and `claude-sonnet` are two models.
+  Pick one spelling and keep it.
+- **`provider` is free text too, but case-insensitive (Q13).** Both ingest routes lowercase it
+  before validation, the duplicate check and storage, so `Anthropic` and `anthropic` are one
+  provider: they share an `hourly_usage` row, and a retry that differs only in the case of
+  `provider` is a duplicate, not a `409`. The stored value is the lowercase form, which is not
+  always what was sent. Only case is normalized: nothing is trimmed, so `"anthropic "` is another
+  provider, and there is no fixed list, so a new or self-hosted provider needs no release.
+  Lowercasing is Go's `strings.ToLower`, which also folds non-ASCII letters (Q20), and the 256
+  byte limit applies to the lowercase form. That differs from the sent length only for a few
+  non-ASCII letters whose lowercase form is longer.
 - **The four token counts do not overlap.** `input_tokens` is the input that was neither read from
   nor written to a cache, so a call's total input is `input_tokens + cache_read_tokens +
   cache_write_tokens`. They are separate because providers price them at different rates. Some
@@ -66,7 +74,7 @@ precision. Otherwise a re-sent event would never compare equal to its stored cop
   key, which cannot hold `NULL`. So leaving `feature` out and sending `""` are the same event.
 - **All eleven fields count for the `409` rule.** A re-send that changes `provider`, `feature` or a
   cache token count, including adding a `feature` to an event first sent without one, is a
-  conflict, not a duplicate.
+  conflict, not a duplicate. The one exception is the case of `provider`, as above.
 
 ## HTTP API
 
@@ -224,16 +232,20 @@ Integration tests use testcontainers and skip when Docker is unavailable. CI run
 - `internal/ingest/store_integration_test.go`: created, duplicate and conflict within an org (one
   conflict case per field), the new fields reach their columns and default to zero and empty, the
   same `event_id` in two orgs with different payloads, an unknown org, and concurrent retries.
+  A re-send with `provider` in another case is a duplicate and the column holds the lowercase
+  form, while a trailing space or the case of another label is still a conflict.
 - `internal/api/events_test.go`: the handler takes the org from the request context, rejects
   `org_id` in the payload, and refuses to run without an identity.
 - `internal/api/events_integration_test.go`: over HTTP, a second org reuses an `event_id` and gets
-  `201`, and each row is stored under the org of the key that sent it.
+  `201`, and each row is stored under the org of the key that sent it. A retry with `provider` in
+  another case gets `200`.
 - `internal/api/batch_test.go`: one result per event in request order across every outcome,
   undecodable events never reach the store, the 500-event and body-size limits, and a store
   failure answering `500` without partial results.
 - `internal/api/batch_integration_test.go`: over HTTP against Postgres, a mixed batch stores only
-  its good events, ids repeated inside a batch, a re-sent batch stores nothing new, a second org
-  reusing the same ids, and a full batch of 500.
+  its good events, ids repeated inside a batch, a re-sent batch stores nothing new, stored events
+  re-sent with `provider` in another case are duplicates, a second org reusing the same ids, and
+  a full batch of 500.
 - `internal/ratelimit/limiter_test.go`: burst then refill on a fake clock, the advertised wait is
   enough, refill stops at the burst, keys are independent, idle buckets are dropped, and
   concurrent callers never get more than the burst.
