@@ -105,6 +105,7 @@ func TestIngestEndpointIdempotency(t *testing.T) {
 	}
 
 	changed := strings.Replace(validBody, `"input_tokens":10`, `"input_tokens":11`, 1)
+	otherCase := strings.Replace(validBody, `"provider":"p"`, `"provider":"P"`, 1)
 	for _, step := range []struct {
 		name, key, body string
 		want            int
@@ -119,6 +120,8 @@ func TestIngestEndpointIdempotency(t *testing.T) {
 		{"read key", readKey.Plaintext, validBody, http.StatusForbidden},
 		{"first send", ingestKey.Plaintext, validBody, http.StatusCreated},
 		{"retry", ingestKey.Plaintext, validBody, http.StatusOK},
+		// Provider is case-insensitive (Q13), so this is the same event.
+		{"retry with provider in another case", ingestKey.Plaintext, otherCase, http.StatusOK},
 		{"changed payload", ingestKey.Plaintext, changed, http.StatusConflict},
 		{"invalid", ingestKey.Plaintext, `{"event_id":"e2"}`, http.StatusBadRequest},
 	} {

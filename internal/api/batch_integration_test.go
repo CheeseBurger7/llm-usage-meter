@@ -129,6 +129,16 @@ func TestBatchEndpoint(t *testing.T) {
 		t.Fatalf("event a: input_tokens = %d, %v; want 10", input, err)
 	}
 
+	// Provider is case-insensitive (Q13): the stored events sent again with
+	// the provider in another case are duplicates, not conflicts.
+	otherCase := func(id string) string {
+		return strings.Replace(eventJSON(id), `"provider":"p"`, `"provider":"P"`, 1)
+	}
+	code, results = send("/v1/events/batch", acmeKey, batchBody(otherCase("a"), otherCase("pre")))
+	if got := statuses(results); code != http.StatusOK || got != "duplicate,duplicate" {
+		t.Fatalf("provider in another case: status %d, results %s", code, got)
+	}
+
 	// Another org's batch reuses the same ids: all new, stored under its own org.
 	code, results = send("/v1/events/batch", globexKey, batchBody(changed("a"), changed("pre")))
 	if got := statuses(results); code != http.StatusOK || got != "created,created" {
