@@ -104,6 +104,11 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   call that ended in a refusal is recorded even where the provider does not
   bill it. Record exactly the billed ones, streamed and non-streamed, once
   Q21 settles where the category and the billed list come from.
+- [ ] **Proxy: meter untagged calls under `_unassigned` (Q18).** A call
+  without `X-Meter-Tenant` is recorded under the tenant set by
+  `PROXY_DEFAULT_TENANT`, default `_unassigned`. An empty value keeps
+  today's skip. Log the reason without header values and count
+  `calls_untagged`. Streamed and non-streamed, including fallback attempts.
 - [ ] **Proxy: OpenAI-compatible chat completions.** Same behaviour for the
   chat completions response shape, streaming and non-streaming. Verify field
   names against the current provider docs.
@@ -162,7 +167,9 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   Pages call the same query functions as the API.
 - [ ] **Dashboard: tenants table and tenant detail.** Sortable table of
   tenants with usage, cost, revenue and margin. Detail page breaks one tenant
-  down by model and feature per day.
+  down by model and feature per day. `_unassigned` (Q18) is labelled as
+  untagged usage, and its revenue counts as zero in the tenants table and in
+  overview revenue and margin.
 - [ ] **Dashboard: API keys page.** Create a key (shown once), list by
   prefix, revoke.
 - [ ] **Dashboard: price book page.** List versions per kind, upload a YAML
@@ -190,7 +197,8 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   hold one frozen statement per tenant per month, one line per model with
   usage, rate, discount and net. Late events after a statement closes become
   an adjustment line on the next statement, never a rewrite. `server
-  statements close --org --month`.
+  statements close --org --month`. No statement for `_unassigned` (Q18), so
+  it never reaches CSV or Stripe.
 - [ ] **Statements: CSV export.** `GET /v1/statements/{id}.csv` and a
   dashboard download link.
 - [ ] **Provider usage read keys: encrypted storage.** An org adds, views
