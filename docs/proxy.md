@@ -6,9 +6,10 @@ response unchanged, reads the token counts from the response and sends one event
 the [Go client library](client.md). A call that the provider retried on a fallback model can give
 more than one event, see [Fallback attempts](#fallback-attempts).
 
-Today it meters **Anthropic Messages calls** (`POST /v1/messages`), streamed or not. The
-OpenAI-compatible shape is the next task in [TASKS.md](TASKS.md); until then those calls are
-forwarded but not metered.
+Today it meters **Anthropic Messages calls** (`POST /v1/messages`), streamed or not, and
+**non-streamed OpenAI-compatible chat completions** (`POST /v1/chat/completions`), see
+[Chat completions](#chat-completions). Streamed chat completions are the next task in
+[TASKS.md](TASKS.md); until then they are forwarded and counted as skipped.
 
 ## Run it
 
@@ -39,6 +40,7 @@ the two headers as default or per-request headers.
 | `METER_INGEST_KEY` | required | API key with the `ingest` scope ([api-keys.md](api-keys.md)) |
 | `UPSTREAM_URL` | `https://api.anthropic.com` | Provider base URL the proxy forwards to |
 | `LISTEN_ADDR` | `127.0.0.1:8081` | Listen address |
+| `CHAT_COMPLETIONS_PROVIDER` | from the upstream host, see below | `provider` label on events from chat completions |
 
 | Header | Required | Meaning |
 | --- | --- | --- |
@@ -140,11 +142,65 @@ that ended in a refusal with no fallback is still recorded with its counts, as b
 even where the provider does not bill it. Both are Q21 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md)
 and a task in [TASKS.md](TASKS.md).
 
+## Chat completions
+
+The OpenAI chat completions shape is served by many providers and self-hosted servers, so the
+response does not say who served it. The `provider` label comes from configuration instead:
+
+| `UPSTREAM_URL` host | `provider` |
+| --- | --- |
+| `api.openai.com` | `openai` |
+| `api.anthropic.com` (the provider's OpenAI SDK compatibility layer) | `anthropic` |
+| any other host, such as a gateway or a vLLM server | none: chat completions are forwarded and counted as skipped |
+
+`CHAT_COMPLETIONS_PROVIDER` overrides the table, for example `CHAT_COMPLETIONS_PROVIDER=together`.
+It is lowercased, as ingest does with every provider (Q13). The proxy never guesses a label for an
+unknown host, because the label picks the price book entry (Q23). The Messages endpoint is always
+labelled `anthropic`.
+
+For a non-streamed chat completion (`"object": "chat.completion"`):
+
+| Event field | Source |
+| --- | --- |
+| `event_id` | response `id` (see Q24) |
+| `tenant_id`, `feature` | `X-Meter-Tenant`, `X-Meter-Feature` |
+| `provider` | as above |
+| `model` | response `model` |
+| `input_tokens` | `usage.prompt_tokens` minus `usage.prompt_tokens_details.cached_tokens` |
+| `output_tokens` | `usage.completion_tokens` |
+| `cache_read_tokens` | `usage.prompt_tokens_details.cached_tokens` (absent or `null` counts as 0) |
+| `cache_write_tokens` | always 0, see below |
+| `latency_ms`, `timestamp` | as for Messages calls |
+
+The field names were checked on 2026-11-17 against the `ChatCompletion` and `CompletionUsage`
+types that the [official OpenAI Python library](https://github.com/openai/openai-python) generates
+from OpenAI's API spec (`src/openai/types/chat/chat_completion.py` and
+`src/openai/types/completion_usage.py`); OpenAI's documentation site could not be reached from the
+environment that wrote this. The provider's
+[OpenAI SDK compatibility](https://platform.claude.com/docs/en/api/openai-sdk) page, checked the
+same day, lists `usage.prompt_tokens` and `usage.completion_tokens` as supported and
+`prompt_tokens_details` as always empty, since prompt caching is not offered there.
+
+- **`prompt_tokens` includes cached tokens.** The spec describes `cached_tokens` as "cached tokens
+  present in the prompt". The event schema keeps the two apart (Q14), so the proxy subtracts. A
+  response with more cached tokens than prompt tokens is skipped rather than given a negative
+  count.
+- **`completion_tokens` includes reasoning tokens**, which the provider bills as output, and
+  rejected prediction tokens, which the spec says are billed too. It is copied as it is.
+- **`prompt_tokens_details.cache_write_tokens` is not read.** The spec calls it "the unadjusted
+  number of prompt tokens written to cache" and does not say whether it is part of
+  `prompt_tokens`. Leaving those tokens in `input_tokens` bills each token once whichever way it
+  is, at the input rate (Q22).
+- **Audio and image tokens** are part of `prompt_tokens` and `completion_tokens` and are billed as
+  text tokens. The event schema has no field for them.
+- **`service_tier`** (flex, priority) changes the provider's price but is not recorded.
+
 ## What is never recorded
 
 - **Request and response bodies.** The response is decoded into a struct with only `type`, `id`,
   `model`, the four usage counts and, per entry of `usage.iterations`, its `type`, `model` and
-  counts. Nothing else is kept, logged or sent. From a stream, only
+  counts. A chat completion is decoded into `object`, `id`, `model`, `prompt_tokens`,
+  `completion_tokens` and `cached_tokens`; `choices` is never decoded. Nothing else is kept, logged or sent. From a stream, only
   the data of `message_start` and `message_delta` events is decoded, and neither carries content.
 - **Provider keys.** The proxy forwards the caller's headers and never reads them. Log lines hold
   a method, a path without its query string, and a reason; no header values.
@@ -162,10 +218,13 @@ answered, logged with its reason and counted (`calls_skipped` in the shutdown lo
 | Case | Why |
 | --- | --- |
 | No `X-Meter-Tenant` header | An event needs a tenant. See Q18 |
+| Chat completion with no provider label configured | The proxy does not guess one. See Q23 |
+| Streamed chat completion | Not supported yet, see [TASKS.md](TASKS.md) |
+| Chat completion with more cached than prompt tokens | The counts contradict each other |
 | Stream that ended before `message_stop`, or held an `error` event | The final counts were never seen. See Q19 |
 | Stream without `event:` lines, or with a usage event over 1 MiB | The proxy finds usage events by their event name |
 | Compressed stream (`Content-Encoding` set) | The proxy cannot scan it |
-| `200` that is neither JSON nor an event stream, or has no `id`, `model` and `usage` | Nothing to read |
+| `200` that is neither JSON nor an event stream, or has no `id`, `model` and `usage` (for a chat completion: no `prompt_tokens` or `completion_tokens`) | Nothing to read |
 | Response larger than 16 MiB | Capture limit, see below |
 | JSON response with a `Content-Encoding` other than gzip | The proxy cannot read it |
 | Caller disconnected before the end | The usage block was never seen |
@@ -220,7 +279,13 @@ through the batch results, so batch calls are not metered.
   says nothing to someone reading a statement.
 - **`event_id` is the provider's message id.** It is unique per call and identical if the same
   response is ever seen twice, so no id has to be invented. The service treats ids as unique per
-  org; when a second provider is added its ids could in theory collide, which the
-  OpenAI-compatible task should settle.
+  org. Chat completions also use the response `id` as it is, without a provider prefix: the
+  hosted providers' ids differ in shape (`msg_...`, `chatcmpl-...`) and are unique per call, and a
+  prefix would not help a self-hosted server whose ids repeat, since those repeat under one
+  provider label. Q24 records the choice and the risk.
+- **The chat completions provider label is configured, never guessed** (Q23). A wrong label puts
+  usage on the wrong price book entry and looks correct; a skipped call is in the log, the counter
+  and reconciliation. Known provider hosts get their label without a setting, so the common case
+  needs no configuration.
 - **Compressed responses are forwarded compressed.** If the caller asked for gzip, the proxy keeps
   the provider's bytes and decompresses only its own copy.

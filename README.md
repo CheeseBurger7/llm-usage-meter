@@ -165,8 +165,9 @@ Six milestones, in order. The product is sellable at the end of the fourth. The 
 1. **Multi-tenant core:** orgs and scoped API keys, events and rollups keyed by org, cache token
    and feature fields, a batch ingest endpoint and per-key rate limits.
 2. **Capture:** a proxy the customer runs next to their app, built on the Go client library
-   (done). It reads token usage from Anthropic responses, streamed or not (done);
-   OpenAI-compatible responses are next. It fails open.
+   (done). It reads token usage from Anthropic responses, streamed or not (done), and from
+   non-streamed OpenAI-compatible chat completions (in review); streamed ones are next. It fails
+   open.
 3. **Read side:** versioned cost and price books per org, and `GET /v1/usage` and `GET /v1/cost`
    returning cost, revenue and margin. Volume tiers apply per calendar month.
 4. **Dashboard:** Google and GitHub sign-in, overview, tenants, API keys, price books and signup,
