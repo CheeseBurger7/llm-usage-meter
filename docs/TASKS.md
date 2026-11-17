@@ -116,7 +116,10 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   `hourly_usage.provider`, and confirm stored values pass it first. Unit
   tests for uppercase folding, non-ASCII, whitespace and length, plus an
   integration test that the constraint refuses a direct insert. Update
-  ingestion.md, which still describes `provider` as free text.
+  ingestion.md, which still describes `provider` as free text. The proxy
+  checks `CHAT_COMPLETIONS_PROVIDER` against the same rule at startup and
+  refuses to start on a bad value; otherwise ingest would reject every
+  chat completion event it sends.
 - [ ] **Ingest: `partial` event field (Q19).** Optional boolean, default
   false, on single and batch ingest, the client package and a migration
   (`NOT NULL DEFAULT false`). Rollups count partial events per row so
@@ -130,9 +133,18 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   whether input is billed when a stream ends in an error. Cite the page and
   the date checked in proxy.md. If it is not billed, or the docs do not say,
   keep those streams skipped. Never guess.
-- [ ] **Proxy: OpenAI-compatible chat completions.** Same behaviour for the
-  chat completions response shape, streaming and non-streaming. Verify field
-  names against the current provider docs.
+- [~] (PR #32) **Proxy: OpenAI-compatible chat completions.** Same behaviour for the
+  chat completions response shape, non-streaming. Verify field names against
+  the current provider docs. (Split: streaming is the next task.)
+- [ ] **Proxy: streamed chat completions.** Read usage from a streamed chat
+  completion while passing it through unbuffered, as for Messages streams.
+  The usage chunk arrives only when the caller sets
+  `stream_options.include_usage`; decide whether the proxy adds it (that
+  changes the request and adds a chunk the caller did not ask for) or skips
+  streams without it, and log the choice in OPEN_QUESTIONS.md. Map counts as
+  the non-streamed path does (Q14, Q22, Q23). Verify chunk and field names
+  against the current provider docs. Test that time to first byte is not
+  delayed.
 - [ ] **Load generator** `cmd/loadgen`: synthetic events with configurable
   orgs/tenants/models/rate through the client package, includes duplicates
   to exercise dedupe.

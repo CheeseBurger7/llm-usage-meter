@@ -4,7 +4,8 @@
 // without changing them. For a successful Anthropic Messages call, streamed
 // or not, it also reads the usage block of the response and records one
 // usage event, plus one for each attempt on another model that declined
-// after producing output. Only token counts and the caller's tags leave the proxy: request
+// after producing output. A non-streamed OpenAI-compatible chat completion
+// gives one event too. Only token counts and the caller's tags leave the proxy: request
 // and response bodies and provider keys are never stored, logged or sent to
 // the metering service.
 //
@@ -47,6 +48,7 @@ const (
 	DefaultMaxCaptureBytes = 16 << 20
 
 	messagesPath = "/v1/messages"
+	chatPath     = "/v1/chat/completions"
 	healthPath   = "/healthz"
 )
 
@@ -71,10 +73,16 @@ type Config struct {
 	// MaxCaptureBytes overrides DefaultMaxCaptureBytes. A larger response is
 	// forwarded but not metered.
 	MaxCaptureBytes int64
+	// ChatProvider is the provider label on events from OpenAI-compatible
+	// chat completions, for example "openai". Many providers serve that
+	// shape, so the label cannot be read from the response. Empty means
+	// chat completions are forwarded and counted as skipped, never recorded
+	// under a guessed provider.
+	ChatProvider string
 }
 
 // Stats counts what happened to calls that were candidates for metering:
-// POST /v1/messages answered with 200.
+// POST /v1/messages or POST /v1/chat/completions answered with 200.
 type Stats struct {
 	// Recorded counts calls handed to the Recorder. A call that fell back
 	// to another model counts once, however many events it produced.
@@ -85,11 +93,12 @@ type Stats struct {
 
 // Proxy is an http.Handler. It is safe for concurrent use.
 type Proxy struct {
-	rp  *httputil.ReverseProxy
-	rec Recorder
-	log *slog.Logger
-	max int64
-	now func() time.Time
+	rp   *httputil.ReverseProxy
+	rec  Recorder
+	log  *slog.Logger
+	max  int64
+	now  func() time.Time
+	chat string // provider label for chat completions; empty: not metered
 
 	recorded, skipped atomic.Uint64
 }
@@ -104,10 +113,11 @@ func New(cfg Config) (*Proxy, error) {
 		return nil, errors.New("proxy: recorder is required")
 	}
 	p := &Proxy{
-		rec: cfg.Recorder,
-		log: cfg.Log,
-		max: cfg.MaxCaptureBytes,
-		now: time.Now,
+		rec:  cfg.Recorder,
+		log:  cfg.Log,
+		max:  cfg.MaxCaptureBytes,
+		now:  time.Now,
+		chat: strings.ToLower(cfg.ChatProvider),
 	}
 	if p.log == nil {
 		p.log = slog.New(slog.DiscardHandler)
@@ -139,10 +149,32 @@ func (p *Proxy) Stats() Stats {
 // call is what the proxy remembers about one request until its response
 // has been forwarded.
 type call struct {
-	start    time.Time
-	tenant   string
-	feature  string
-	messages bool // POST /v1/messages
+	start   time.Time
+	tenant  string
+	feature string
+	api     api
+}
+
+// api is the response shape a metered endpoint returns.
+type api int
+
+const (
+	apiNone     api = iota // not a metered endpoint
+	apiMessages            // POST /v1/messages
+	apiChat                // POST /v1/chat/completions
+)
+
+func apiOf(r *http.Request) api {
+	if r.Method != http.MethodPost {
+		return apiNone
+	}
+	switch strings.TrimSuffix(r.URL.Path, "/") {
+	case messagesPath:
+		return apiMessages
+	case chatPath:
+		return apiChat
+	}
+	return apiNone
 }
 
 type callKey struct{}
@@ -153,10 +185,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := &call{
-		start:    p.now(),
-		tenant:   r.Header.Get(TenantHeader),
-		feature:  r.Header.Get(FeatureHeader),
-		messages: r.Method == http.MethodPost && strings.TrimSuffix(r.URL.Path, "/") == messagesPath,
+		start:   p.now(),
+		tenant:  r.Header.Get(TenantHeader),
+		feature: r.Header.Get(FeatureHeader),
+		api:     apiOf(r),
 	}
 	p.rp.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callKey{}, c)))
 }
@@ -166,7 +198,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // never changes the response and never returns an error.
 func (p *Proxy) inspect(resp *http.Response) error {
 	c, _ := resp.Request.Context().Value(callKey{}).(*call)
-	if c == nil || !c.messages || resp.StatusCode != http.StatusOK {
+	if c == nil || c.api == apiNone || resp.StatusCode != http.StatusOK {
 		// Other endpoints, and calls the provider refused, carry no usage.
 		return nil
 	}
@@ -179,6 +211,10 @@ func (p *Proxy) inspect(resp *http.Response) error {
 		p.skip("response is neither JSON nor an event stream")
 	case c.tenant == "":
 		p.skip("request has no " + TenantHeader + " header")
+	case c.api == apiChat && p.chat == "":
+		p.skip("no provider label is configured for chat completions")
+	case c.api == apiChat && streamed:
+		p.skip("streamed chat completions are not metered yet")
 	case streamed && !plain:
 		p.skip("compressed event streams are not supported")
 	case streamed:
@@ -263,6 +299,15 @@ func (b *capture) finish() {
 			b.p.skip("response could not be decompressed within the capture limit")
 			return
 		}
+	}
+	if b.c.api == apiChat {
+		ev, reason := chatEvent(data, b.p.chat)
+		if reason != "" {
+			b.p.skip(reason)
+			return
+		}
+		b.p.record(b.c, metered{serving: ev}, b.latency)
+		return
 	}
 	m, ok := anthropicEvents(data)
 	if !ok {

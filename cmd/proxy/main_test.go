@@ -23,6 +23,36 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.meterEndpoint != "https://meter.example.com" || cfg.meterKey != "lum_ingest_abc" {
 		t.Fatalf("meter settings = %q, %q", cfg.meterEndpoint, cfg.meterKey)
 	}
+	if cfg.chatProvider != "anthropic" {
+		t.Fatalf("chat provider for the default upstream = %q", cfg.chatProvider)
+	}
+}
+
+func TestLoadConfigChatProvider(t *testing.T) {
+	tests := []struct {
+		upstream, setting, want string
+	}{
+		{upstream: "https://api.openai.com", want: "openai"},
+		{upstream: "https://API.OpenAI.com:443/", want: "openai"},
+		{upstream: "https://api.anthropic.com", want: "anthropic"},
+		{upstream: "http://gateway.internal:9000", want: ""}, // unknown host: not guessed
+		{upstream: "http://vllm.internal:8000", setting: "Self-Hosted", want: "self-hosted"},
+		{upstream: "https://api.openai.com", setting: "azure-openai", want: "azure-openai"},
+	}
+	for _, tt := range tests {
+		cfg, err := loadConfig(env(map[string]string{
+			"METER_ENDPOINT":            "https://meter.example.com",
+			"METER_INGEST_KEY":          "lum_ingest_abc",
+			"UPSTREAM_URL":              tt.upstream,
+			"CHAT_COMPLETIONS_PROVIDER": tt.setting,
+		}))
+		if err != nil {
+			t.Fatalf("%s: loadConfig: %v", tt.upstream, err)
+		}
+		if cfg.chatProvider != tt.want {
+			t.Errorf("%s with %q: chat provider = %q, want %q", tt.upstream, tt.setting, cfg.chatProvider, tt.want)
+		}
+	}
 }
 
 func TestLoadConfigOverrides(t *testing.T) {
