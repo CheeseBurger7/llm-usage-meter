@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,6 +39,18 @@ type config struct {
 	upstream      *url.URL
 	meterEndpoint string
 	meterKey      string
+	// chatProvider labels events from OpenAI-compatible chat completions.
+	// Empty: those calls are forwarded but not metered.
+	chatProvider string
+}
+
+// knownChatProviders gives the provider label for chat completions when the
+// upstream is a provider's own API host. Any other host, such as a gateway
+// or a self-hosted server, needs CHAT_COMPLETIONS_PROVIDER: a guessed label
+// would put the usage on the wrong price book entry (OPEN_QUESTIONS Q23).
+var knownChatProviders = map[string]string{
+	"api.openai.com":    "openai",
+	"api.anthropic.com": "anthropic", // the provider's OpenAI SDK compatibility layer
 }
 
 // loadConfig reads the configuration from the environment. Error messages
@@ -66,6 +79,10 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, errors.New("UPSTREAM_URL must be an http or https URL with a host")
 	}
 	cfg.upstream = u
+	cfg.chatProvider = strings.ToLower(getenv("CHAT_COMPLETIONS_PROVIDER"))
+	if cfg.chatProvider == "" {
+		cfg.chatProvider = knownChatProviders[strings.ToLower(u.Hostname())]
+	}
 	return cfg, nil
 }
 
@@ -78,7 +95,9 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("METER_ENDPOINT or METER_INGEST_KEY: %w", err)
 	}
-	handler, err := proxy.New(proxy.Config{Upstream: cfg.upstream, Recorder: meter, Log: log})
+	handler, err := proxy.New(proxy.Config{
+		Upstream: cfg.upstream, Recorder: meter, Log: log, ChatProvider: cfg.chatProvider,
+	})
 	if err != nil {
 		return err
 	}
@@ -94,7 +113,8 @@ func run(log *slog.Logger) error {
 	}
 	serveErr := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", cfg.listenAddr, "upstream", cfg.upstream.Host)
+		log.Info("listening", "addr", cfg.listenAddr, "upstream", cfg.upstream.Host,
+			"chat_completions_provider", cfg.chatProvider)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErr <- err
 		}
