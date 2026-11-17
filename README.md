@@ -166,7 +166,7 @@ Six milestones, in order. The product is sellable at the end of the fourth. The 
    and feature fields, a batch ingest endpoint and per-key rate limits.
 2. **Capture:** a proxy the customer runs next to their app, built on the Go client library
    (done). It reads token usage from Anthropic responses, streamed or not (done), and from
-   non-streamed OpenAI-compatible chat completions (in review); streamed ones are next. It fails
+   non-streamed OpenAI-compatible chat completions (in review, PR #32); streamed ones are next. It fails
    open.
 3. **Read side:** versioned cost and price books per org, and `GET /v1/usage` and `GET /v1/cost`
    returning cost, revenue and margin. Volume tiers apply per calendar month.

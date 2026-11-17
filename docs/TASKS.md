@@ -104,7 +104,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   call that ended in a refusal is recorded even where the provider does not
   bill it. Record exactly the billed ones, streamed and non-streamed, once
   Q21 settles where the category and the billed list come from.
-- [ ] **Proxy: OpenAI-compatible chat completions.** Same behaviour for the
+- [~] (PR #32) **Proxy: OpenAI-compatible chat completions.** Same behaviour for the
   chat completions response shape, non-streaming. Verify field names against
   the current provider docs. (Split: streaming is the next task.)
 - [ ] **Proxy: streamed chat completions.** Read usage from a streamed chat
