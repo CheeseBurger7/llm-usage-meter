@@ -257,9 +257,10 @@ func TestGzipResponseIsForwardedCompressedAndMetered(t *testing.T) {
 }
 
 func TestNullCacheCountsAreZero(t *testing.T) {
-	ev, ok := anthropicEvent([]byte(`{"type":"message","id":"msg_1","model":"m",
+	m, ok := anthropicEvents([]byte(`{"type":"message","id":"msg_1","model":"m",
 		"usage":{"input_tokens":7,"output_tokens":3,"cache_creation_input_tokens":null,"cache_read_input_tokens":null}}`))
-	if !ok || ev.InputTokens != 7 || ev.OutputTokens != 3 || ev.CacheReadTokens != 0 || ev.CacheWriteTokens != 0 {
+	ev := m.serving
+	if !ok || len(m.declined) != 0 || ev.InputTokens != 7 || ev.OutputTokens != 3 || ev.CacheReadTokens != 0 || ev.CacheWriteTokens != 0 {
 		t.Fatalf("event = %+v, ok = %v", ev, ok)
 	}
 }
