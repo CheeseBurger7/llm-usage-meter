@@ -109,6 +109,14 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   `PROXY_DEFAULT_TENANT`, default `_unassigned`. An empty value keeps
   today's skip. Log the reason without header values and count
   `calls_untagged`. Streamed and non-streamed, including fallback attempts.
+- [ ] **Ingest: restrict `provider` to `[a-z0-9._-]` (Q20).** Lowercase
+  ASCII letters only (not `strings.ToLower`), then refuse anything outside
+  `^[a-z0-9._-]{1,256}$` with a field error, on single and batch ingest.
+  Add a migration with a matching `CHECK` on `events.provider` and
+  `hourly_usage.provider`, and confirm stored values pass it first. Unit
+  tests for uppercase folding, non-ASCII, whitespace and length, plus an
+  integration test that the constraint refuses a direct insert. Update
+  ingestion.md, which still describes `provider` as free text.
 - [ ] **Ingest: `partial` event field (Q19).** Optional boolean, default
   false, on single and batch ingest, the client package and a migration
   (`NOT NULL DEFAULT false`). Rollups count partial events per row so
