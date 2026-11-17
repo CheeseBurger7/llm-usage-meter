@@ -109,6 +109,19 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   `PROXY_DEFAULT_TENANT`, default `_unassigned`. An empty value keeps
   today's skip. Log the reason without header values and count
   `calls_untagged`. Streamed and non-streamed, including fallback attempts.
+- [ ] **Ingest: `partial` event field (Q19).** Optional boolean, default
+  false, on single and batch ingest, the client package and a migration
+  (`NOT NULL DEFAULT false`). Rollups count partial events per row so
+  statements can show them. Integration test.
+- [ ] **Proxy: record unfinished streams as partial (Q19).** A stream that
+  ends before `message_stop` because the caller hung up or the connection
+  dropped is recorded with `partial: true`. It holds the counts from
+  `message_start` and the latest output count seen, plus the model from
+  `message_start`. Count it as `calls_partial`. Before recording streams
+  that carried an `error` event, check the provider's current docs for
+  whether input is billed when a stream ends in an error. Cite the page and
+  the date checked in proxy.md. If it is not billed, or the docs do not say,
+  keep those streams skipped. Never guess.
 - [ ] **Proxy: OpenAI-compatible chat completions.** Same behaviour for the
   chat completions response shape, streaming and non-streaming. Verify field
   names against the current provider docs.
@@ -198,7 +211,8 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   usage, rate, discount and net. Late events after a statement closes become
   an adjustment line on the next statement, never a rewrite. `server
   statements close --org --month`. No statement for `_unassigned` (Q18), so
-  it never reaches CSV or Stripe.
+  it never reaches CSV or Stripe. Partial events (Q19) are billed as
+  recorded, and each line shows how many partial calls it includes.
 - [ ] **Statements: CSV export.** `GET /v1/statements/{id}.csv` and a
   dashboard download link.
 - [ ] **Provider usage read keys: encrypted storage.** An org adds, views
