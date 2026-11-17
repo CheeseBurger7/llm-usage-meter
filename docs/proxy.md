@@ -217,11 +217,11 @@ answered, logged with its reason and counted (`calls_skipped` in the shutdown lo
 
 | Case | Why |
 | --- | --- |
-| No `X-Meter-Tenant` header | An event needs a tenant. See Q18 |
+| No `X-Meter-Tenant` header, only while `PROXY_DEFAULT_TENANT` is empty | An event needs a tenant. See Q18; by default such calls are metered under `_unassigned` once the untagged-calls task lands |
 | Chat completion with no provider label configured | The proxy does not guess one. See Q23 |
 | Streamed chat completion | Not supported yet, see [TASKS.md](TASKS.md) |
 | Chat completion with more cached than prompt tokens | The counts contradict each other |
-| Stream that ended before `message_stop`, or held an `error` event | The final counts were never seen. See Q19 |
+| Stream that ended before `message_stop`, or held an `error` event | The final counts were never seen. See Q19: once the partial streams task lands, these are recorded with `partial: true`. A stream that ended in an `error` event stays skipped unless the provider's docs confirm that its input is billed |
 | Stream without `event:` lines, or with a usage event over 1 MiB | The proxy finds usage events by their event name |
 | Compressed stream (`Content-Encoding` set) | The proxy cannot scan it |
 | `200` that is neither JSON nor an event stream, or has no `id`, `model` and `usage` (for a chat completion: no `prompt_tokens` or `completion_tokens`) | Nothing to read |
@@ -258,14 +258,22 @@ through the batch results, so batch calls are not metered.
   time to first byte is the provider's (`TestStreamFirstByteIsNotDelayed`). The cost is a
   dependency on the provider's framing: the `event:` line must come before its `data:` line, as
   the provider sends it. A stream framed differently is forwarded and counted as skipped.
-- **An unfinished stream is skipped, not recorded with partial counts** (Q19). Before
-  `message_stop` the proxy has the input counts but an output count that is still growing, so an
-  event would understate the call by an unknown amount. A skipped call is visible in the log, the
-  counter and reconciliation; a too-small event looks correct.
-- **A missing tenant header skips metering instead of failing the call** (Q18). Rejecting would
-  let a metering mistake break the product. The cost is that untagged calls are invisible to
-  billing until someone reads the proxy log; reconciliation against the provider's report shows
-  the gap.
+- **An unfinished stream will be recorded as partial, not skipped** (Q19). Today it is skipped.
+  Before `message_stop` the proxy has exact input counts, but the output count is usually the
+  1 to 3 tokens in `message_start`, so an event understates output by an unknown amount. Skipping
+  loses the input cost as well. Recording without a marker would make an undercount look like a
+  complete call. So the event carries `partial: true`, statements bill it as recorded (it can
+  only undercount) and show how many partial calls each line includes, and reconciliation
+  shows the missing output. A stream that ended in an `error` event is recorded only if the
+  provider's docs confirm that its input is billed; otherwise it stays skipped.
+- **A missing tenant header never fails the call** (Q18). Rejecting would let a metering mistake
+  break the product. Today such calls are skipped and visible only in the log. Q18 settled that
+  they will be metered under the reserved tenant `_unassigned` (`PROXY_DEFAULT_TENANT`, empty
+  means skip). That cost then shows on the dashboard as lost margin instead of disappearing.
+  Statements leave `_unassigned` out, since nobody can be invoiced for it. Leaving the header
+  off cannot be used to cheat: only the org's own backend calls the proxy, and an org that wants
+  to hide usage can skip the proxy altogether. Reconciliation against the provider's report is
+  the check on complete metering.
 - **Loopback listen address by default.** The proxy does not authenticate callers: anyone who can
   reach it can send usage for any tenant under the org's ingest key. It holds no provider key, so
   it cannot be used to make free LLM calls. Set `LISTEN_ADDR` to expose it to other containers or

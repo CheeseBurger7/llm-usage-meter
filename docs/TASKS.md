@@ -104,6 +104,35 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   call that ended in a refusal is recorded even where the provider does not
   bill it. Record exactly the billed ones, streamed and non-streamed, once
   Q21 settles where the category and the billed list come from.
+- [ ] **Proxy: meter untagged calls under `_unassigned` (Q18).** A call
+  without `X-Meter-Tenant` is recorded under the tenant set by
+  `PROXY_DEFAULT_TENANT`, default `_unassigned`. An empty value keeps
+  today's skip. Log the reason without header values and count
+  `calls_untagged`. Streamed and non-streamed, including fallback attempts.
+- [ ] **Ingest: restrict `provider` to `[a-z0-9._-]` (Q20).** Lowercase
+  ASCII letters only (not `strings.ToLower`), then refuse anything outside
+  `^[a-z0-9._-]{1,256}$` with a field error, on single and batch ingest.
+  Add a migration with a matching `CHECK` on `events.provider` and
+  `hourly_usage.provider`, and confirm stored values pass it first. Unit
+  tests for uppercase folding, non-ASCII, whitespace and length, plus an
+  integration test that the constraint refuses a direct insert. Update
+  ingestion.md, which still describes `provider` as free text. The proxy
+  checks `CHAT_COMPLETIONS_PROVIDER` against the same rule at startup and
+  refuses to start on a bad value; otherwise ingest would reject every
+  chat completion event it sends.
+- [ ] **Ingest: `partial` event field (Q19).** Optional boolean, default
+  false, on single and batch ingest, the client package and a migration
+  (`NOT NULL DEFAULT false`). Rollups count partial events per row so
+  statements can show them. Integration test.
+- [ ] **Proxy: record unfinished streams as partial (Q19).** A stream that
+  ends before `message_stop` because the caller hung up or the connection
+  dropped is recorded with `partial: true`. It holds the counts from
+  `message_start` and the latest output count seen, plus the model from
+  `message_start`. Count it as `calls_partial`. Before recording streams
+  that carried an `error` event, check the provider's current docs for
+  whether input is billed when a stream ends in an error. Cite the page and
+  the date checked in proxy.md. If it is not billed, or the docs do not say,
+  keep those streams skipped. Never guess.
 - [~] (PR #32) **Proxy: OpenAI-compatible chat completions.** Same behaviour for the
   chat completions response shape, non-streaming. Verify field names against
   the current provider docs. (Split: streaming is the next task.)
@@ -171,7 +200,9 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   Pages call the same query functions as the API.
 - [ ] **Dashboard: tenants table and tenant detail.** Sortable table of
   tenants with usage, cost, revenue and margin. Detail page breaks one tenant
-  down by model and feature per day.
+  down by model and feature per day. `_unassigned` (Q18) is labelled as
+  untagged usage, and its revenue counts as zero in the tenants table and in
+  overview revenue and margin.
 - [ ] **Dashboard: API keys page.** Create a key (shown once), list by
   prefix, revoke.
 - [ ] **Dashboard: price book page.** List versions per kind, upload a YAML
@@ -199,7 +230,9 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   hold one frozen statement per tenant per month, one line per model with
   usage, rate, discount and net. Late events after a statement closes become
   an adjustment line on the next statement, never a rewrite. `server
-  statements close --org --month`.
+  statements close --org --month`. No statement for `_unassigned` (Q18), so
+  it never reaches CSV or Stripe. Partial events (Q19) are billed as
+  recorded, and each line shows how many partial calls it includes.
 - [ ] **Statements: CSV export.** `GET /v1/statements/{id}.csv` and a
   dashboard download link.
 - [ ] **Provider usage read keys: encrypted storage.** An org adds, views
