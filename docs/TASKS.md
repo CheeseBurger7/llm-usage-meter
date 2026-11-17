@@ -105,8 +105,17 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   bill it. Record exactly the billed ones, streamed and non-streamed, once
   Q21 settles where the category and the billed list come from.
 - [ ] **Proxy: OpenAI-compatible chat completions.** Same behaviour for the
-  chat completions response shape, streaming and non-streaming. Verify field
-  names against the current provider docs.
+  chat completions response shape, non-streaming. Verify field names against
+  the current provider docs. (Split: streaming is the next task.)
+- [ ] **Proxy: streamed chat completions.** Read usage from a streamed chat
+  completion while passing it through unbuffered, as for Messages streams.
+  The usage chunk arrives only when the caller sets
+  `stream_options.include_usage`; decide whether the proxy adds it (that
+  changes the request and adds a chunk the caller did not ask for) or skips
+  streams without it, and log the choice in OPEN_QUESTIONS.md. Map counts as
+  the non-streamed path does (Q14, Q22, Q23). Verify chunk and field names
+  against the current provider docs. Test that time to first byte is not
+  delayed.
 - [ ] **Load generator** `cmd/loadgen`: synthetic events with configurable
   orgs/tenants/models/rate through the client package, includes duplicates
   to exercise dedupe.
