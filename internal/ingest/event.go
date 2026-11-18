@@ -4,8 +4,9 @@ package ingest
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
+
+	"github.com/CheeseBurger7/llm-usage-meter/internal/provider"
 )
 
 // Event is a single LLM call as reported by a client.
@@ -13,10 +14,11 @@ type Event struct {
 	EventID  string
 	TenantID string
 	// Provider is the LLM provider that served the call, for example
-	// "anthropic". It is a free-text label and is case-insensitive: ingest
-	// lowercases it before validation, dedupe and storage, so "Anthropic" and
-	// "anthropic" are one provider and the stored value is the lowercase
-	// form. Nothing else is normalized, so " anthropic" is another provider.
+	// "anthropic". There is no fixed list, but the label must match
+	// ^[a-z0-9._-]{1,256}$ (Q20). It is case-insensitive (Q13): ingest folds
+	// the ASCII letters A to Z to lowercase before validation, dedupe and
+	// storage, so "Anthropic" and "anthropic" are one provider. Nothing else
+	// is normalized: " anthropic" and "ánthropic" are refused.
 	Provider string
 	Model    string
 	// Feature is an optional label for the product feature that made the
@@ -59,7 +61,9 @@ func (e Event) Validate() error {
 	}
 	requireString("event_id", e.EventID)
 	requireString("tenant_id", e.TenantID)
-	requireString("provider", e.Provider)
+	if reason := provider.Check(e.Provider); reason != "" {
+		fields["provider"] = reason
+	}
 	requireString("model", e.Model)
 	if len(e.Feature) > maxFeatureLen {
 		fields["feature"] = fmt.Sprintf("must be at most %d bytes", maxFeatureLen)
@@ -90,12 +94,12 @@ func (e Event) Validate() error {
 	return nil
 }
 
-// normalized returns the event as Postgres will store it: provider in
-// lowercase, timestamp in UTC at microsecond precision. Ingest applies it
-// before Validate, so the length limit on provider is checked on the stored
-// form. TenantID, Model and Feature stay byte for byte.
+// normalized returns the event as Postgres will store it: provider with
+// A to Z lowercased, timestamp in UTC at microsecond precision. Ingest
+// applies it before Validate, so Validate sees the stored form. TenantID,
+// Model and Feature stay byte for byte.
 func (e Event) normalized() Event {
-	e.Provider = strings.ToLower(e.Provider)
+	e.Provider = provider.Normalize(e.Provider)
 	e.Timestamp = e.Timestamp.UTC().Truncate(time.Microsecond)
 	return e
 }
