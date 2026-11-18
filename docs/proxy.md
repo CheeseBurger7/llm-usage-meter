@@ -41,10 +41,11 @@ the two headers as default or per-request headers.
 | `UPSTREAM_URL` | `https://api.anthropic.com` | Provider base URL the proxy forwards to |
 | `LISTEN_ADDR` | `127.0.0.1:8081` | Listen address |
 | `CHAT_COMPLETIONS_PROVIDER` | from the upstream host, see below | `provider` label on events from chat completions |
+| `PROXY_DEFAULT_TENANT` | `_unassigned` | `tenant_id` of calls without `X-Meter-Tenant`. Set it to empty to forward those calls without metering. See [Untagged calls](#untagged-calls) |
 
 | Header | Required | Meaning |
 | --- | --- | --- |
-| `X-Meter-Tenant` | to be metered | `tenant_id` of the event |
+| `X-Meter-Tenant` | no, but needed to bill the right tenant | `tenant_id` of the event |
 | `X-Meter-Feature` | no | `feature` of the event |
 
 Both headers are removed before the request goes to the provider. `GET /healthz` is answered by
@@ -58,7 +59,7 @@ stream. For a JSON message:
 | Event field | Source |
 | --- | --- |
 | `event_id` | response `id` (the provider's message id, so a re-sent event dedupes) |
-| `tenant_id`, `feature` | `X-Meter-Tenant`, `X-Meter-Feature` |
+| `tenant_id`, `feature` | `X-Meter-Tenant` (or `PROXY_DEFAULT_TENANT` when it is missing), `X-Meter-Feature` |
 | `provider` | `anthropic` |
 | `model` | response `model` (the model that served the call, not the requested alias) |
 | `input_tokens` | `usage.input_tokens` |
@@ -210,6 +211,19 @@ same day, lists `usage.prompt_tokens` and `usage.completion_tokens` as supported
 `TestLogsNeverContainBodiesOrKeys` checks the log, for the prompt, the completion and the provider
 key.
 
+## Untagged calls
+
+A call without `X-Meter-Tenant` is still forwarded unchanged and metered under the tenant in
+`PROXY_DEFAULT_TENANT`, by default the reserved tenant `_unassigned` (Q18). This covers every
+event of the call: streamed or not, Messages or chat completions, and declined fallback attempts.
+Each such call logs `call metered under the default tenant` with its reason (never a header
+value) and is counted in `calls_untagged` in the shutdown log line. `calls_untagged` is part of
+`calls_recorded`, not added to it. The default tenant is never sent to the provider.
+
+With `PROXY_DEFAULT_TENANT` set to empty, untagged calls are forwarded without metering and
+counted as skipped, as before Q18. A value over 256 bytes, the `tenant_id` limit in ingest, stops
+the proxy at startup.
+
 ## Calls that are forwarded but not metered
 
 Metering never changes or fails a call. Each case below is forwarded exactly as the provider
@@ -217,7 +231,7 @@ answered, logged with its reason and counted (`calls_skipped` in the shutdown lo
 
 | Case | Why |
 | --- | --- |
-| No `X-Meter-Tenant` header, only while `PROXY_DEFAULT_TENANT` is empty | An event needs a tenant. See Q18; by default such calls are metered under `_unassigned` once the untagged-calls task lands |
+| No `X-Meter-Tenant` header, only while `PROXY_DEFAULT_TENANT` is set to empty | An event needs a tenant. By default such calls are metered under `_unassigned`, see [Untagged calls](#untagged-calls) |
 | Chat completion with no provider label configured | The proxy does not guess one. See Q23 |
 | Streamed chat completion | Not supported yet, see [TASKS.md](TASKS.md) |
 | Chat completion with more cached than prompt tokens | The counts contradict each other |
@@ -267,9 +281,12 @@ through the batch results, so batch calls are not metered.
   shows the missing output. A stream that ended in an `error` event is recorded only if the
   provider's docs confirm that its input is billed; otherwise it stays skipped.
 - **A missing tenant header never fails the call** (Q18). Rejecting would let a metering mistake
-  break the product. Today such calls are skipped and visible only in the log. Q18 settled that
-  they will be metered under the reserved tenant `_unassigned` (`PROXY_DEFAULT_TENANT`, empty
-  means skip). That cost then shows on the dashboard as lost margin instead of disappearing.
+  break the product. Such calls are metered under the reserved tenant `_unassigned`
+  (`PROXY_DEFAULT_TENANT`, empty means skip), so the cost shows on the dashboard as lost margin
+  instead of disappearing. Unset and empty differ on purpose: the safe default needs no setting,
+  and an org that prefers the old behaviour can still choose it. The `proxy` package itself
+  defaults to skipping (`Config.DefaultTenant` empty), so embedding it never invents a tenant;
+  only `cmd/proxy` applies `_unassigned`.
   Statements leave `_unassigned` out, since nobody can be invoiced for it. Leaving the header
   off cannot be used to cheat: only the org's own backend calls the proxy, and an org that wants
   to hide usage can skip the proxy altogether. Reconciliation against the provider's report is
