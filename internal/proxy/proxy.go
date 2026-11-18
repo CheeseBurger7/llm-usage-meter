@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime"
@@ -31,6 +32,7 @@ import (
 	"time"
 
 	"github.com/CheeseBurger7/llm-usage-meter/client"
+	"github.com/CheeseBurger7/llm-usage-meter/internal/provider"
 )
 
 const (
@@ -83,7 +85,9 @@ type Config struct {
 	// chat completions, for example "openai". Many providers serve that
 	// shape, so the label cannot be read from the response. Empty means
 	// chat completions are forwarded and counted as skipped, never recorded
-	// under a guessed provider.
+	// under a guessed provider. Otherwise, after A-Z is lowercased, it must
+	// pass the ingest rule for provider labels (Q20), or New fails: ingest
+	// would refuse every event recorded under it.
 	ChatProvider string
 	// DefaultTenant is the tenant of a call that has no TenantHeader, for
 	// example UnassignedTenant. Empty means such calls are forwarded and
@@ -127,12 +131,18 @@ func New(cfg Config) (*Proxy, error) {
 	if cfg.Recorder == nil {
 		return nil, errors.New("proxy: recorder is required")
 	}
+	chat := provider.Normalize(cfg.ChatProvider)
+	if chat != "" {
+		if reason := provider.Check(chat); reason != "" {
+			return nil, fmt.Errorf("proxy: chat provider label %s", reason)
+		}
+	}
 	p := &Proxy{
 		rec:  cfg.Recorder,
 		log:  cfg.Log,
 		max:  cfg.MaxCaptureBytes,
 		now:  time.Now,
-		chat: strings.ToLower(cfg.ChatProvider),
+		chat: chat,
 
 		defaultTenant: cfg.DefaultTenant,
 	}
