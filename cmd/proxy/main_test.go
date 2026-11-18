@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-func env(m map[string]string) func(string) string {
-	return func(k string) string { return m[k] }
+func env(m map[string]string) func(string) (string, bool) {
+	return func(k string) (string, bool) { v, ok := m[k]; return v, ok }
 }
 
 func TestLoadConfigDefaults(t *testing.T) {
@@ -25,6 +25,34 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 	if cfg.chatProvider != "anthropic" {
 		t.Fatalf("chat provider for the default upstream = %q", cfg.chatProvider)
+	}
+	if cfg.defaultTenant != "_unassigned" {
+		t.Fatalf("default tenant = %q, want _unassigned", cfg.defaultTenant)
+	}
+}
+
+func TestLoadConfigDefaultTenant(t *testing.T) {
+	tests := map[string]struct {
+		set   bool
+		value string
+		want  string
+	}{
+		"unset":  {want: "_unassigned"},
+		"empty":  {set: true, value: "", want: ""}, // forward untagged calls without metering
+		"custom": {set: true, value: "untagged-calls", want: "untagged-calls"},
+	}
+	for name, tt := range tests {
+		m := map[string]string{"METER_ENDPOINT": "https://meter.example.com", "METER_INGEST_KEY": "lum_ingest_abc"}
+		if tt.set {
+			m["PROXY_DEFAULT_TENANT"] = tt.value
+		}
+		cfg, err := loadConfig(env(m))
+		if err != nil {
+			t.Fatalf("%s: loadConfig: %v", name, err)
+		}
+		if cfg.defaultTenant != tt.want {
+			t.Errorf("%s: default tenant = %q, want %q", name, cfg.defaultTenant, tt.want)
+		}
 	}
 }
 
@@ -81,6 +109,10 @@ func TestLoadConfigErrors(t *testing.T) {
 		"bad upstream": {map[string]string{
 			"METER_ENDPOINT": "https://m.example.com", "METER_INGEST_KEY": key, "UPSTREAM_URL": "api.anthropic.com",
 		}, "UPSTREAM_URL"},
+		"default tenant too long": {map[string]string{
+			"METER_ENDPOINT": "https://m.example.com", "METER_INGEST_KEY": key,
+			"PROXY_DEFAULT_TENANT": strings.Repeat("t", 257),
+		}, "PROXY_DEFAULT_TENANT"},
 	}
 	for name, tt := range tests {
 		_, err := loadConfig(env(tt.env))

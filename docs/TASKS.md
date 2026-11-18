@@ -104,7 +104,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   call that ended in a refusal is recorded even where the provider does not
   bill it. Record exactly the billed ones, streamed and non-streamed, once
   Q21 settles where the category and the billed list come from.
-- [ ] **Proxy: meter untagged calls under `_unassigned` (Q18).** A call
+- [~] (PR #34) **Proxy: meter untagged calls under `_unassigned` (Q18).** A call
   without `X-Meter-Tenant` is recorded under the tenant set by
   `PROXY_DEFAULT_TENANT`, default `_unassigned`. An empty value keeps
   today's skip. Log the reason without header values and count
