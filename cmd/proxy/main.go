@@ -42,7 +42,14 @@ type config struct {
 	// chatProvider labels events from OpenAI-compatible chat completions.
 	// Empty: those calls are forwarded but not metered.
 	chatProvider string
+	// defaultTenant is the tenant of calls without X-Meter-Tenant. Empty:
+	// those calls are forwarded but not metered.
+	defaultTenant string
 }
+
+// maxTenantLen matches the tenant_id limit in ingest; a longer default
+// tenant would get every untagged event refused.
+const maxTenantLen = 256
 
 // knownChatProviders gives the provider label for chat completions when the
 // upstream is a provider's own API host. Any other host, such as a gateway
@@ -54,8 +61,11 @@ var knownChatProviders = map[string]string{
 }
 
 // loadConfig reads the configuration from the environment. Error messages
-// name the variable and never include its value.
-func loadConfig(getenv func(string) string) (config, error) {
+// name the variable and never include its value. lookupEnv has the
+// signature of os.LookupEnv, because PROXY_DEFAULT_TENANT set to empty
+// means something different from PROXY_DEFAULT_TENANT unset.
+func loadConfig(lookupEnv func(string) (string, bool)) (config, error) {
+	getenv := func(k string) string { v, _ := lookupEnv(k); return v }
 	cfg := config{
 		listenAddr:    getenv("LISTEN_ADDR"),
 		meterEndpoint: getenv("METER_ENDPOINT"),
@@ -83,11 +93,21 @@ func loadConfig(getenv func(string) string) (config, error) {
 	if cfg.chatProvider == "" {
 		cfg.chatProvider = knownChatProviders[strings.ToLower(u.Hostname())]
 	}
+	// Unset: meter untagged calls under the reserved tenant (Q18). Set to
+	// empty: forward them without metering, as before.
+	tenant, ok := lookupEnv("PROXY_DEFAULT_TENANT")
+	if !ok {
+		tenant = proxy.UnassignedTenant
+	}
+	if len(tenant) > maxTenantLen {
+		return config{}, fmt.Errorf("PROXY_DEFAULT_TENANT must be at most %d bytes", maxTenantLen)
+	}
+	cfg.defaultTenant = tenant
 	return cfg, nil
 }
 
 func run(log *slog.Logger) error {
-	cfg, err := loadConfig(os.Getenv)
+	cfg, err := loadConfig(os.LookupEnv)
 	if err != nil {
 		return err
 	}
@@ -97,6 +117,7 @@ func run(log *slog.Logger) error {
 	}
 	handler, err := proxy.New(proxy.Config{
 		Upstream: cfg.upstream, Recorder: meter, Log: log, ChatProvider: cfg.chatProvider,
+		DefaultTenant: cfg.defaultTenant,
 	})
 	if err != nil {
 		return err
@@ -114,7 +135,8 @@ func run(log *slog.Logger) error {
 	serveErr := make(chan error, 1)
 	go func() {
 		log.Info("listening", "addr", cfg.listenAddr, "upstream", cfg.upstream.Host,
-			"chat_completions_provider", cfg.chatProvider)
+			"chat_completions_provider", cfg.chatProvider,
+			"default_tenant", cfg.defaultTenant)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErr <- err
 		}
@@ -137,6 +159,7 @@ func run(log *slog.Logger) error {
 	}
 	ps, ms := handler.Stats(), meter.Stats()
 	log.Info("stopped", "calls_recorded", ps.Recorded, "calls_skipped", ps.Skipped,
+		"calls_untagged", ps.Untagged,
 		"events_sent", ms.Sent, "events_rejected", ms.Rejected, "events_dropped", ms.Dropped)
 	return err
 }
