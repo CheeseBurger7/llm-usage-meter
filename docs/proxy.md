@@ -155,7 +155,9 @@ response does not say who served it. The `provider` label comes from configurati
 | any other host, such as a gateway or a vLLM server | none: chat completions are forwarded and counted as skipped |
 
 `CHAT_COMPLETIONS_PROVIDER` overrides the table, for example `CHAT_COMPLETIONS_PROVIDER=together`.
-It is lowercased, as ingest does with every provider (Q13). The proxy never guesses a label for an
+Its `A`-`Z` is lowercased, as ingest does with every provider (Q13), and the result must match
+ingest's rule `^[a-z0-9._-]{1,256}$` (Q20): otherwise the proxy refuses to start, since ingest
+would reject every chat completion event it sends. The error names the variable, not its value. The proxy never guesses a label for an
 unknown host, because the label picks the price book entry (Q23). The Messages endpoint is always
 labelled `anthropic`.
 

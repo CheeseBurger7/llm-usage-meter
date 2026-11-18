@@ -43,7 +43,7 @@ precision. Otherwise a re-sent event would never compare equal to its stored cop
 |---|---|---|
 | `event_id` | yes | 1 to 256 bytes. Unique per org |
 | `tenant_id` | yes | 1 to 256 bytes |
-| `provider` | yes | 1 to 256 bytes, for example `anthropic`. Case-insensitive, stored in lowercase |
+| `provider` | yes | Matches `^[a-z0-9._-]{1,256}$` after `A`-`Z` is lowercased, for example `anthropic` |
 | `model` | yes | 1 to 256 bytes |
 | `feature` | no | At most 256 bytes. Left out or `""` means not set |
 | `input_tokens` | no, default 0 | `>= 0`. Does not include cache tokens |
@@ -56,15 +56,17 @@ precision. Otherwise a re-sent event would never compare equal to its stored cop
 - **`tenant_id`, `model` and `feature` are free-text labels.** They are stored and compared byte
   for byte, with no trimming or case folding: `Claude-Sonnet` and `claude-sonnet` are two models.
   Pick one spelling and keep it.
-- **`provider` is free text too, but case-insensitive (Q13).** Both ingest routes lowercase it
-  before validation, the duplicate check and storage, so `Anthropic` and `anthropic` are one
-  provider: they share an `hourly_usage` row, and a retry that differs only in the case of
-  `provider` is a duplicate, not a `409`. The stored value is the lowercase form, which is not
-  always what was sent. Only case is normalized: nothing is trimmed, so `"anthropic "` is another
-  provider, and there is no fixed list, so a new or self-hosted provider needs no release.
-  Lowercasing is Go's `strings.ToLower`, which also folds non-ASCII letters (Q20), and the 256
-  byte limit applies to the lowercase form. That differs from the sent length only for a few
-  non-ASCII letters whose lowercase form is longer.
+- **`provider` is a restricted label, and case-insensitive (Q13, Q20).** Both ingest routes
+  lowercase the ASCII letters `A` to `Z` before validation, the duplicate check and storage, so
+  `Anthropic` and `anthropic` are one provider: they share an `hourly_usage` row, and a retry that
+  differs only in the case of `provider` is a duplicate, not a `409`. The stored value is the
+  lowercase form, which is not always what was sent. After that, `provider` must match
+  `^[a-z0-9._-]{1,256}$`, or the event is refused with `400` and a field error (`invalid` in a
+  batch). Nothing is trimmed or rewritten: whitespace, non-ASCII letters such as `ánthropic` and
+  any other punctuation are refused. Every allowed value is ASCII, so Go, SQL and the price book
+  compare the same bytes, and the byte length is the same before and after lowercasing. There is
+  still no fixed list, so a new or self-hosted provider needs no release. Migration 00007 adds the
+  same rule as a `CHECK` constraint on `events.provider` and `hourly_usage.provider`.
 - **The four token counts do not overlap.** `input_tokens` is the input that was neither read from
   nor written to a cache, so a call's total input is `input_tokens + cache_read_tokens +
   cache_write_tokens`. They are separate because providers price them at different rates. Some
@@ -219,6 +221,14 @@ same migration, so an insert without a provider fails. Re-sending an old event w
 provider is a `409`, because the stored copy says `unknown`. **This is a breaking API change:** a
 client that does not send `provider` now gets `400`.
 
+Migration `00007_provider_charset.sql` adds a `CHECK` constraint on `events.provider` and
+`hourly_usage.provider` with the ingest rule (Q20). The length is checked with `length()`, since a
+Postgres regex bound cannot exceed 255. Values stored so far pass (`unknown` from migration 00005,
+`anthropic` from the proxy, lowercase test data). If a database holds anything else, the migration
+fails without changing data; fix those rows and run it again. **This is a breaking API change:** a
+client that sends a provider with whitespace, non-ASCII letters or other punctuation now gets
+`400`.
+
 Migrations live in `internal/storage/migrations` (goose, embedded in the binary). Queries are in
 `internal/storage/queries`; run `make generate` to rebuild `internal/storage/gen` with sqlc.
 
@@ -226,14 +236,17 @@ Migrations live in `internal/storage/migrations` (goose, embedded in the binary)
 
 Integration tests use testcontainers and skip when Docker is unavailable. CI runs them.
 
+- `internal/provider/provider_test.go`: the provider rule: only `A`-`Z` is folded, and empty,
+  overlong, whitespace, non-ASCII and other punctuation are refused without echoing the value.
 - `internal/ingest/event_test.go`: validation of every field, including the byte limit on
-  `feature`, and that `sameAs` compares every field. That test counts the fields of `Event`, so
+  `feature` and the provider character set, and that `sameAs` compares every field. That test counts the fields of `Event`, so
   adding a field without adding it to the comparison fails.
 - `internal/ingest/store_integration_test.go`: created, duplicate and conflict within an org (one
   conflict case per field), the new fields reach their columns and default to zero and empty, the
   same `event_id` in two orgs with different payloads, an unknown org, and concurrent retries.
   A re-send with `provider` in another case is a duplicate and the column holds the lowercase
-  form, while a trailing space or the case of another label is still a conflict.
+  form, a provider with a trailing space is refused, and the case of another label is still a
+  conflict.
 - `internal/api/events_test.go`: the handler takes the org from the request context, rejects
   `org_id` in the payload, and refuses to run without an identity.
 - `internal/api/events_integration_test.go`: over HTTP, a second org reuses an `event_id` and gets
@@ -266,4 +279,6 @@ Integration tests use testcontainers and skip when Docker is unavailable. CI run
 - `internal/storage/migrate_integration_test.go`: migration 4 applied to a database that already
   has events and rollups, then down and up again. Migration 5 applied to a database that already
   has an event: the row is kept with provider `unknown`, an insert without a provider or with a
-  negative cache count fails, then down and up again.
+  negative cache count fails, then down and up again. Migration 7 over stored providers that pass
+  its rule, direct inserts into `events` and `hourly_usage` refused by the constraint, and the
+  migration stopping on a stored value that breaks the rule.
