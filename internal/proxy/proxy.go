@@ -35,8 +35,14 @@ import (
 
 const (
 	// TenantHeader names the tenant a call is billed to. A call without it
-	// is forwarded but not metered.
+	// is metered under Config.DefaultTenant, or forwarded but not metered
+	// when that is empty.
 	TenantHeader = "X-Meter-Tenant"
+	// UnassignedTenant is the reserved tenant for calls without
+	// TenantHeader (OPEN_QUESTIONS Q18). The leading underscore keeps it
+	// apart from real tenant ids. cmd/proxy uses it as the default for
+	// Config.DefaultTenant.
+	UnassignedTenant = "_unassigned"
 	// FeatureHeader optionally names the product feature that made the call.
 	FeatureHeader = "X-Meter-Feature"
 
@@ -79,6 +85,10 @@ type Config struct {
 	// chat completions are forwarded and counted as skipped, never recorded
 	// under a guessed provider.
 	ChatProvider string
+	// DefaultTenant is the tenant of a call that has no TenantHeader, for
+	// example UnassignedTenant. Empty means such calls are forwarded and
+	// counted as skipped.
+	DefaultTenant string
 }
 
 // Stats counts what happened to calls that were candidates for metering:
@@ -89,6 +99,9 @@ type Stats struct {
 	Recorded uint64
 	// Skipped counts calls that were forwarded but could not be metered.
 	Skipped uint64
+	// Untagged counts the recorded calls that had no TenantHeader and went
+	// to Config.DefaultTenant. It is part of Recorded, not added to it.
+	Untagged uint64
 }
 
 // Proxy is an http.Handler. It is safe for concurrent use.
@@ -99,8 +112,10 @@ type Proxy struct {
 	max  int64
 	now  func() time.Time
 	chat string // provider label for chat completions; empty: not metered
+	// defaultTenant replaces a missing TenantHeader; empty: not metered.
+	defaultTenant string
 
-	recorded, skipped atomic.Uint64
+	recorded, skipped, untagged atomic.Uint64
 }
 
 // New returns a Proxy that forwards to cfg.Upstream.
@@ -118,6 +133,8 @@ func New(cfg Config) (*Proxy, error) {
 		max:  cfg.MaxCaptureBytes,
 		now:  time.Now,
 		chat: strings.ToLower(cfg.ChatProvider),
+
+		defaultTenant: cfg.DefaultTenant,
 	}
 	if p.log == nil {
 		p.log = slog.New(slog.DiscardHandler)
@@ -143,7 +160,7 @@ func New(cfg Config) (*Proxy, error) {
 
 // Stats returns the current counters.
 func (p *Proxy) Stats() Stats {
-	return Stats{Recorded: p.recorded.Load(), Skipped: p.skipped.Load()}
+	return Stats{Recorded: p.recorded.Load(), Skipped: p.skipped.Load(), Untagged: p.untagged.Load()}
 }
 
 // call is what the proxy remembers about one request until its response
@@ -153,6 +170,9 @@ type call struct {
 	tenant  string
 	feature string
 	api     api
+	// untagged is set when the request had no TenantHeader and tenant is
+	// the configured default.
+	untagged bool
 }
 
 // api is the response shape a metered endpoint returns.
@@ -190,6 +210,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		feature: r.Header.Get(FeatureHeader),
 		api:     apiOf(r),
 	}
+	if c.tenant == "" && p.defaultTenant != "" {
+		c.tenant, c.untagged = p.defaultTenant, true
+	}
 	p.rp.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callKey{}, c)))
 }
 
@@ -210,6 +233,7 @@ func (p *Proxy) inspect(resp *http.Response) error {
 	case !streamed && mediaType != "application/json":
 		p.skip("response is neither JSON nor an event stream")
 	case c.tenant == "":
+		// Only reached when no default tenant is configured.
 		p.skip("request has no " + TenantHeader + " header")
 	case c.api == apiChat && p.chat == "":
 		p.skip("no provider label is configured for chat completions")
@@ -343,6 +367,12 @@ func (p *Proxy) record(c *call, m metered, latency time.Duration) {
 		p.rec.Record(ev)
 	}
 	p.recorded.Add(1)
+	if c.untagged {
+		p.untagged.Add(1)
+		// The reason only: the default tenant is configuration, and no
+		// header value is logged.
+		p.log.Warn("proxy: call metered under the default tenant", "reason", "request has no "+TenantHeader+" header")
+	}
 	if m.leftOut > 0 {
 		p.log.Info("proxy: declined attempts without output were not recorded", "attempts", m.leftOut)
 	}
