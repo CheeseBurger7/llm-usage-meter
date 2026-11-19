@@ -5,12 +5,12 @@
 INSERT INTO hourly_usage (org_id, tenant_id, provider, model, feature, hour_start,
                           event_count, input_tokens, output_tokens,
                           cache_read_tokens, cache_write_tokens,
-                          latency_ms_sum, latency_ms_max, source_ingested_at)
+                          latency_ms_sum, latency_ms_max, partial_count, source_ingested_at)
 SELECT org_id, tenant_id, provider, model, feature,
        date_trunc('hour', event_time AT TIME ZONE 'UTC') AT TIME ZONE 'UTC',
        COUNT(*), SUM(input_tokens), SUM(output_tokens),
        SUM(cache_read_tokens), SUM(cache_write_tokens),
-       SUM(latency_ms), MAX(latency_ms), MAX(ingested_at)
+       SUM(latency_ms), MAX(latency_ms), COUNT(*) FILTER (WHERE partial), MAX(ingested_at)
 FROM events
 WHERE event_time >= @window_start AND event_time < @window_end
 GROUP BY 1, 2, 3, 4, 5, 6
@@ -22,6 +22,7 @@ ON CONFLICT (org_id, tenant_id, provider, model, feature, hour_start) DO UPDATE 
     cache_write_tokens = EXCLUDED.cache_write_tokens,
     latency_ms_sum     = EXCLUDED.latency_ms_sum,
     latency_ms_max     = EXCLUDED.latency_ms_max,
+    partial_count      = EXCLUDED.partial_count,
     source_ingested_at = EXCLUDED.source_ingested_at,
     updated_at         = now();
 

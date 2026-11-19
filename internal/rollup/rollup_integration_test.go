@@ -311,3 +311,55 @@ func TestBackfillStaleSeesEachOrgSeparately(t *testing.T) {
 		t.Fatalf("third backfill = %d, %v; want nothing stale", n, err)
 	}
 }
+
+// partial_count counts the partial events of each row (Q19), next to the
+// complete ones, and is recomputed with the rest of the row.
+func TestRollupCountsPartialEvents(t *testing.T) {
+	pool := newPool(t)
+	ctx := context.Background()
+	s := newOrgStore(t, pool)
+	roller := rollup.New(pool, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+
+	add := func(id string, partial bool) {
+		t.Helper()
+		_, err := s.Ingest(ctx, s.org, ingest.Event{
+			EventID: id, TenantID: "t", Provider: "anthropic", Model: "m",
+			InputTokens: 10, OutputTokens: 1, LatencyMs: 5, Timestamp: h.Add(time.Minute), Partial: partial,
+		})
+		if err != nil {
+			t.Fatalf("ingest %s: %v", id, err)
+		}
+	}
+	partialCount := func() (count, partial int64) {
+		t.Helper()
+		err := pool.QueryRow(ctx, `SELECT event_count, partial_count FROM hourly_usage
+		                           WHERE org_id = $1 AND tenant_id = 't' AND hour_start = $2`, s.org, h).
+			Scan(&count, &partial)
+		if err != nil {
+			t.Fatalf("read row: %v", err)
+		}
+		return count, partial
+	}
+
+	add("complete-1", false)
+	add("partial-1", true)
+	add("complete-2", false)
+	for run := 0; run < 2; run++ {
+		if err := roller.Rollup(ctx, h, h.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if c, p := partialCount(); c != 3 || p != 1 {
+			t.Fatalf("run %d: event_count %d, partial_count %d; want 3, 1", run, c, p)
+		}
+	}
+
+	// A late partial event makes the hour stale; backfill picks it up.
+	add("partial-2", true)
+	if _, err := roller.BackfillStale(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if c, p := partialCount(); c != 4 || p != 2 {
+		t.Fatalf("after backfill: event_count %d, partial_count %d; want 4, 2", c, p)
+	}
+}

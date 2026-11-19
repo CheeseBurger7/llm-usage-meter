@@ -34,7 +34,8 @@ c.Record(client.Event{
 
 The key needs the `ingest` scope ([api-keys.md](api-keys.md)). `Event` has the fields of the
 ingest API with the same rules ([ingestion.md](ingestion.md#event-fields)); a zero `Timestamp` is
-set to the time of the `Record` call. The client does not validate events itself. The service
+set to the time of the `Record` call. `Partial` is left out of the request when false, so a client
+that never sets it also works with a service older than the field. The client does not validate events itself. The service
 does, and a refused event is counted in `Stats().Rejected`.
 
 ## How delivery works
