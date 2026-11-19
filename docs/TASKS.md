@@ -109,7 +109,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   `PROXY_DEFAULT_TENANT`, default `_unassigned`. An empty value keeps
   today's skip. Log the reason without header values and count
   `calls_untagged`. Streamed and non-streamed, including fallback attempts.
-- [ ] **Ingest: restrict `provider` to `[a-z0-9._-]` (Q20).** Lowercase
+- [~] (PR #35) **Ingest: restrict `provider` to `[a-z0-9._-]` (Q20).** Lowercase
   ASCII letters only (not `strings.ToLower`), then refuse anything outside
   `^[a-z0-9._-]{1,256}$` with a field error, on single and batch ingest.
   Add a migration with a matching `CHECK` on `events.provider` and

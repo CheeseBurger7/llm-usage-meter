@@ -2,8 +2,12 @@ package storage
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -267,4 +271,90 @@ func TestHourlyUsageOrgDimensionsMigrationOnExistingData(t *testing.T) {
 	if e, h := count("events"), count("hourly_usage"); e != 1 || h != 0 {
 		t.Fatalf("after down and up: events = %d, hourly_usage = %d; want 1 and 0", e, h)
 	}
+}
+
+// Migration 7 adds a CHECK on provider in events and hourly_usage matching
+// the ingest rule ^[a-z0-9._-]{1,256}$ (Q20). Values stored before it ('unknown'
+// from migration 5, lowercase labels) pass, and a direct insert that goes
+// around ingest is refused.
+func TestProviderCharsetMigration(t *testing.T) {
+	ctx := context.Background()
+	pool, provider := newMigrationDB(t)
+
+	if _, err := provider.UpTo(ctx, 4); err != nil {
+		t.Fatalf("migrate to 4: %v", err)
+	}
+	var org string
+	if err := pool.QueryRow(ctx, `INSERT INTO orgs (name) VALUES ('Acme') RETURNING id::text`).Scan(&org); err != nil {
+		t.Fatal(err)
+	}
+	// An event from before provider existed becomes 'unknown' in migration 5.
+	if _, err := pool.Exec(ctx, `INSERT INTO events (org_id, event_id, tenant_id, model, input_tokens, output_tokens, latency_ms, event_time)
+	                             VALUES ($1, 'old', 't', 'm', 1, 1, 1, now())`, org); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(ctx, 6); err != nil {
+		t.Fatalf("migrate to 6: %v", err)
+	}
+
+	const insertEvent = `INSERT INTO events (org_id, event_id, tenant_id, provider, model, input_tokens, output_tokens, latency_ms, event_time)
+	                     VALUES ($1, $2, 't', $3, 'm', 1, 1, 1, now())`
+	const insertRollup = `INSERT INTO hourly_usage (org_id, tenant_id, provider, model, feature, hour_start, event_count,
+	                                                input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+	                                                latency_ms_sum, latency_ms_max, source_ingested_at)
+	                      VALUES ($1, 't', $2, 'm', '', '2026-01-01T00:00:00Z', 1, 1, 1, 0, 0, 1, 1, now())`
+	allowed := []string{"anthropic", "openai", "azure-openai", "bedrock.us_east-1", "p2", strings.Repeat("p", 256)}
+	for i, p := range allowed {
+		if _, err := pool.Exec(ctx, insertEvent, org, fmt.Sprintf("before-%d", i), p); err != nil {
+			t.Fatalf("event with provider %q before migration 7: %v", p, err)
+		}
+		if _, err := pool.Exec(ctx, insertRollup, org, p); err != nil {
+			t.Fatalf("rollup with provider %q before migration 7: %v", p, err)
+		}
+	}
+
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatalf("migrate up over stored providers: %v", err)
+	}
+
+	refused := []string{
+		"", "Anthropic", "ánthropic", "é", " anthropic", "anthropic ", "anth ropic",
+		"anthropic\t", "open/ai", "open:ai", strings.Repeat("p", 257),
+	}
+	for i, p := range refused {
+		if _, err := pool.Exec(ctx, insertEvent, org, fmt.Sprintf("bad-%d", i), p); !isCheckViolation(err) {
+			t.Errorf("event with provider %q: err = %v; want a check violation", p, err)
+		}
+		if _, err := pool.Exec(ctx, insertRollup, org, p); !isCheckViolation(err) {
+			t.Errorf("rollup with provider %q: err = %v; want a check violation", p, err)
+		}
+	}
+	for i, p := range allowed {
+		if _, err := pool.Exec(ctx, insertEvent, org, fmt.Sprintf("after-%d", i), p); err != nil {
+			t.Errorf("event with provider %q after migration 7: %v", p, err)
+		}
+	}
+
+	// A stored value outside the rule stops the migration instead of being
+	// rewritten or deleted.
+	if _, err := provider.DownTo(ctx, 6); err != nil {
+		t.Fatalf("migrate down to 6: %v", err)
+	}
+	if _, err := pool.Exec(ctx, insertEvent, org, "upper", "Anthropic"); err != nil {
+		t.Fatalf("insert after down: %v", err)
+	}
+	if _, err := provider.Up(ctx); err == nil {
+		t.Fatal("migration 7 succeeded over a stored provider that breaks the rule")
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM events WHERE event_id = 'upper'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatalf("migrate up after fixing the row: %v", err)
+	}
+}
+
+func isCheckViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23514"
 }

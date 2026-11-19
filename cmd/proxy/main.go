@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/CheeseBurger7/llm-usage-meter/client"
+	"github.com/CheeseBurger7/llm-usage-meter/internal/provider"
 	"github.com/CheeseBurger7/llm-usage-meter/internal/proxy"
 )
 
@@ -89,8 +90,15 @@ func loadConfig(lookupEnv func(string) (string, bool)) (config, error) {
 		return config{}, errors.New("UPSTREAM_URL must be an http or https URL with a host")
 	}
 	cfg.upstream = u
-	cfg.chatProvider = strings.ToLower(getenv("CHAT_COMPLETIONS_PROVIDER"))
-	if cfg.chatProvider == "" {
+	// The label must pass the ingest rule (Q20), or ingest would refuse every
+	// chat completion event the proxy sends. Checked at startup so a bad value
+	// stops the proxy instead of losing usage silently.
+	cfg.chatProvider = provider.Normalize(getenv("CHAT_COMPLETIONS_PROVIDER"))
+	if cfg.chatProvider != "" {
+		if reason := provider.Check(cfg.chatProvider); reason != "" {
+			return config{}, fmt.Errorf("CHAT_COMPLETIONS_PROVIDER %s", reason)
+		}
+	} else {
 		cfg.chatProvider = knownChatProviders[strings.ToLower(u.Hostname())]
 	}
 	// Unset: meter untagged calls under the reserved tenant (Q18). Set to

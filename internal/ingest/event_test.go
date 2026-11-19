@@ -34,6 +34,9 @@ func TestValidate(t *testing.T) {
 		{"missing model", func(e *Event) { e.Model = "" }, "model"},
 		{"missing provider", func(e *Event) { e.Provider = "" }, "provider"},
 		{"overlong provider", func(e *Event) { e.Provider = strings.Repeat("p", maxIDLen+1) }, "provider"},
+		{"provider at limit", func(e *Event) { e.Provider = strings.Repeat("p", maxIDLen) }, ""},
+		{"provider with space", func(e *Event) { e.Provider = "anthropic " }, "provider"},
+		{"non-ASCII provider", func(e *Event) { e.Provider = "ánthropic" }, "provider"},
 		{"feature and cache tokens set", func(e *Event) {
 			e.Feature, e.CacheReadTokens, e.CacheWriteTokens = "chat", 30, 20
 		}, ""},
@@ -125,13 +128,13 @@ func TestSameAsIgnoresTimezone(t *testing.T) {
 	}
 }
 
-// Only provider is case-insensitive, and only its case is normalized.
+// Only provider is case-insensitive, and only its ASCII letters are folded.
 func TestNormalizedLowercasesProviderOnly(t *testing.T) {
 	ev := validEvent()
 	ev.TenantID, ev.Provider, ev.Model, ev.Feature = "Tenant-A", " Anthropic\tÉ ", "Claude-Sonnet", "Chat"
 	got := ev.normalized()
-	if got.Provider != " anthropic\té " {
-		t.Fatalf("provider = %q; want lowercase with whitespace kept", got.Provider)
+	if got.Provider != " anthropic\tÉ " {
+		t.Fatalf("provider = %q; want A-Z lowercased and everything else kept", got.Provider)
 	}
 	if got.TenantID != ev.TenantID || got.Model != ev.Model || got.Feature != ev.Feature {
 		t.Fatalf("normalized changed another label: %+v", got)
@@ -155,18 +158,36 @@ func TestSameAsProviderCaseAfterNormalizing(t *testing.T) {
 	}
 }
 
-// Ingest lowercases before it validates, so the length limit applies to the
-// stored form. "Ⱥ" is two bytes and its lowercase "ⱥ" is three. Validation
-// fails before the database is used, so a Store without one is enough.
-func TestIngestValidatesTheLowercasedProvider(t *testing.T) {
-	ev := validEvent()
-	ev.Provider = strings.Repeat("Ⱥ", maxIDLen/2)
-	if err := ev.Validate(); err != nil {
-		t.Fatalf("as sent the provider is within the limit: %v", err)
+// Ingest folds A-Z before it validates (Q13, Q20), so uppercase ASCII is
+// accepted, while non-ASCII letters, whitespace and other punctuation are
+// refused rather than rewritten. Validation fails before the database is
+// used, so a Store without one is enough for the refusals.
+func TestIngestProviderCharset(t *testing.T) {
+	for _, p := range []string{"Anthropic", "OPENAI", "Azure-OpenAI", "bedrock.us_east-1"} {
+		ev := validEvent()
+		ev.Provider = p
+		if err := ev.normalized().Validate(); err != nil {
+			t.Errorf("%q after normalizing: %v", p, err)
+		}
 	}
-	_, err := NewStore(nil).Ingest(t.Context(), [16]byte{1}, ev)
-	var verr *ValidationError
-	if !errors.As(err, &verr) || verr.Fields["provider"] == "" {
-		t.Fatalf("err = %v; want a validation error on provider", err)
+	refused := map[string]string{
+		"non-ASCII letter":     "ánthropic",
+		"non-ASCII uppercase":  "ÁNTHROPIC",
+		"two-byte to 3-byte":   strings.Repeat("Ⱥ", maxIDLen/2),
+		"leading space":        " anthropic",
+		"trailing space":       "anthropic ",
+		"tab":                  "anthropic\t",
+		"slash":                "open/ai",
+		"overlong":             strings.Repeat("p", maxIDLen+1),
+		"overlong after upper": strings.Repeat("P", maxIDLen+1),
+	}
+	for name, p := range refused {
+		ev := validEvent()
+		ev.Provider = p
+		_, err := NewStore(nil).Ingest(t.Context(), [16]byte{1}, ev)
+		var verr *ValidationError
+		if !errors.As(err, &verr) || verr.Fields["provider"] == "" {
+			t.Errorf("%s: err = %v; want a validation error on provider", name, err)
+		}
 	}
 }

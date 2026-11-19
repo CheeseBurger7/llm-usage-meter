@@ -124,3 +124,24 @@ func TestLoadConfigErrors(t *testing.T) {
 		}
 	}
 }
+
+// CHAT_COMPLETIONS_PROVIDER must pass the ingest rule for provider labels
+// (Q20), or ingest would refuse every chat completion event. A bad value
+// stops the proxy at startup, and the error never repeats the value.
+func TestLoadConfigRejectsBadChatProvider(t *testing.T) {
+	for _, bad := range []string{"self hosted", " openai", "ópenai", "open/ai", strings.Repeat("p", 257)} {
+		_, err := loadConfig(env(map[string]string{
+			"METER_ENDPOINT":            "https://meter.example.com",
+			"METER_INGEST_KEY":          "lum_ingest_abc",
+			"UPSTREAM_URL":              "http://vllm.internal:8000",
+			"CHAT_COMPLETIONS_PROVIDER": bad,
+		}))
+		if err == nil {
+			t.Errorf("%q: loadConfig succeeded, want an error", bad)
+			continue
+		}
+		if !strings.Contains(err.Error(), "CHAT_COMPLETIONS_PROVIDER") || strings.Contains(err.Error(), bad) {
+			t.Errorf("%q: error %q should name the variable and not its value", bad, err)
+		}
+	}
+}

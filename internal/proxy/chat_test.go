@@ -3,6 +3,7 @@ package proxy
 import (
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -177,6 +178,22 @@ func TestChatLogsNeverContainBodiesOrKeys(t *testing.T) {
 			if strings.Contains(logs, secret) {
 				t.Fatalf("provider %q: log contains %q:\n%s", provider, secret, logs)
 			}
+		}
+	}
+}
+
+// New refuses a chat provider label that ingest would refuse (Q20), and
+// folds only A-Z, as ingest does.
+func TestNewChecksChatProvider(t *testing.T) {
+	upstream, _ := url.Parse("http://upstream.invalid")
+	for _, bad := range []string{"self hosted", "ópenai", "open/ai"} {
+		if _, err := New(Config{Upstream: upstream, Recorder: &fakeRecorder{}, ChatProvider: bad}); err == nil {
+			t.Errorf("%q: New succeeded, want an error", bad)
+		}
+	}
+	for _, ok := range []string{"", "openai", "Azure-OpenAI", "self-hosted.v1"} {
+		if _, err := New(Config{Upstream: upstream, Recorder: &fakeRecorder{}, ChatProvider: ok}); err != nil {
+			t.Errorf("%q: %v", ok, err)
 		}
 	}
 }

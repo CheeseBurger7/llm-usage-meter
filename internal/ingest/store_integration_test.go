@@ -158,12 +158,18 @@ func TestIngestProviderIsCaseInsensitive(t *testing.T) {
 		t.Fatalf("stored provider = %q, %v; want anthropic", stored, err)
 	}
 
-	// Only case is normalized, and only for provider.
+	// Only case is normalized, and only for provider. A provider with a
+	// space is refused outright (Q20) rather than compared.
+	ev := event()
+	ev.Provider = "anthropic "
+	var verr *ingest.ValidationError
+	if _, err := s.Ingest(ctx, org, ev); !errors.As(err, &verr) || verr.Fields["provider"] == "" {
+		t.Fatalf("provider with a space: err = %v; want a validation error on provider", err)
+	}
 	for name, mutate := range map[string]func(*ingest.Event){
-		"provider with a space": func(e *ingest.Event) { e.Provider = "anthropic " },
-		"model case":            func(e *ingest.Event) { e.Model = "Claude-Sonnet" },
-		"tenant case":           func(e *ingest.Event) { e.TenantID = "Tenant-A" },
-		"feature case":          func(e *ingest.Event) { e.Feature = "Chat" },
+		"model case":   func(e *ingest.Event) { e.Model = "Claude-Sonnet" },
+		"tenant case":  func(e *ingest.Event) { e.TenantID = "Tenant-A" },
+		"feature case": func(e *ingest.Event) { e.Feature = "Chat" },
 	} {
 		ev := event()
 		mutate(&ev)
