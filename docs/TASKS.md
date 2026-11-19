@@ -98,12 +98,26 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   ids that stay unique and stable (the message id is shared by the attempts).
   Verify against the provider's current refusals and fallback docs which
   attempts are billed; never guess.
-- [ ] **Proxy: refusals billed by category (blocked by Q21).** The provider
-  bills a refusal that produced no output only for some refusal categories.
-  Today a declined fallback attempt without output gives no event, and a
-  call that ended in a refusal is recorded even where the provider does not
-  bill it. Record exactly the billed ones, streamed and non-streamed, once
-  Q21 settles where the category and the billed list come from.
+- [ ] **Proxy: final refusals billed by category (Q21).** A call that ended
+  in a refusal with `output_tokens` of 0 is recorded only when the category
+  in `stop_details` (in a stream, the `message_delta`) is on the billed
+  list. The list is built in (`bio`, `frontier_llm`,
+  `reasoning_extraction`) and replaced by `PROXY_BILLED_REFUSAL_CATEGORIES`.
+  A known category not on the list is skipped and counted as
+  `refusals_unbilled`; a missing or unrecognised one is skipped, counted as
+  `refusals_unknown_category` and logged with the category name. A refusal
+  after some output stays recorded. Unit tests for billed, unbilled and
+  unknown categories, streamed and non-streamed. Update proxy.md with the
+  provider page and the date the list was checked.
+- [ ] **Proxy: declined fallback attempts billed by category (Q21).** Same
+  rule and list for a `message` entry in `usage.iterations` with
+  `output_tokens` of 0. Decode only `fallback` blocks in `content` (in a
+  stream, `content_block_start` events of that type) for their category;
+  never read text. First confirm in the provider's docs how each block maps
+  to its `usage.iterations` entry, cite the page and the date checked in
+  proxy.md, and keep these attempts skipped if the docs do not say. Event
+  id `<message id>/attempt-<n>` as for other attempts. Unit tests for
+  billed, unbilled and unknown categories, streamed and non-streamed.
 - [~] (PR #34) **Proxy: meter untagged calls under `_unassigned` (Q18).** A call
   without `X-Meter-Tenant` is recorded under the tenant set by
   `PROXY_DEFAULT_TENANT`, default `_unassigned`. An empty value keeps

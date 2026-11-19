@@ -140,8 +140,11 @@ the list of billed categories may change. The proxy does not guess: the attempt 
 and the proxy logs how many it left out. Where such an attempt was billed, the tenant is
 under-billed by its input tokens until reconciliation shows the gap. For the same reason a call
 that ended in a refusal with no fallback is still recorded with its counts, as before this change,
-even where the provider does not bill it. Both are Q21 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md)
-and a task in [TASKS.md](TASKS.md).
+even where the provider does not bill it. Q21 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) settled
+both: once the two refusal tasks in [TASKS.md](TASKS.md) land, a refusal without output is
+recorded only when its category is on the billed list (built in, replaced by
+`PROXY_BILLED_REFUSAL_CATEGORIES`). Known unbilled categories and unknown or missing ones are
+skipped and counted, so a tenant is not charged for a refusal the provider did not bill.
 
 ## Chat completions
 
