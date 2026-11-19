@@ -60,7 +60,7 @@ func TestClientSpeaksTheServiceBatchFormat(t *testing.T) {
 	full := client.Event{
 		EventID: "full", TenantID: "tenant-a", Provider: "anthropic", Model: "claude-sonnet",
 		Feature: "chat", InputTokens: 100, OutputTokens: 50, CacheReadTokens: 30,
-		CacheWriteTokens: 20, LatencyMs: 420, Timestamp: when,
+		CacheWriteTokens: 20, LatencyMs: 420, Timestamp: when, Partial: true,
 	}
 	c.Record(full)
 	c.Record(full) // an identical re-send is a duplicate, still delivered
@@ -79,7 +79,7 @@ func TestClientSpeaksTheServiceBatchFormat(t *testing.T) {
 	want := ingest.Event{
 		EventID: "full", TenantID: "tenant-a", Provider: "anthropic", Model: "claude-sonnet",
 		Feature: "chat", InputTokens: 100, OutputTokens: 50, CacheReadTokens: 30,
-		CacheWriteTokens: 20, LatencyMs: 420, Timestamp: when,
+		CacheWriteTokens: 20, LatencyMs: 420, Timestamp: when, Partial: true,
 	}
 	if got := store.events["full"]; got != want {
 		t.Fatalf("stored event = %+v, want %+v", got, want)

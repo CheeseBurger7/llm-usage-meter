@@ -55,6 +55,11 @@ type Event struct {
 	// Timestamp is when the call happened. Record sets a zero Timestamp to
 	// the current time.
 	Timestamp time.Time `json:"timestamp"`
+	// Partial marks a call that ended before its final usage report, such
+	// as a stream the caller hung up on, so its counts may be too low. It
+	// is left out of the request when false, so a client that never sets
+	// it also works with a service older than the field.
+	Partial bool `json:"partial,omitempty"`
 }
 
 // Stats is a snapshot of what happened to recorded events.

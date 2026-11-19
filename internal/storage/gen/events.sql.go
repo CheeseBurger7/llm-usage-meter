@@ -13,7 +13,7 @@ import (
 
 const getEvent = `-- name: GetEvent :one
 SELECT event_id, tenant_id, provider, model, feature, input_tokens, output_tokens,
-       cache_read_tokens, cache_write_tokens, latency_ms, event_time
+       cache_read_tokens, cache_write_tokens, latency_ms, event_time, partial
 FROM events
 WHERE org_id = $1 AND event_id = $2
 `
@@ -35,6 +35,7 @@ type GetEventRow struct {
 	CacheWriteTokens int64
 	LatencyMs        int64
 	EventTime        pgtype.Timestamptz
+	Partial          bool
 }
 
 func (q *Queries) GetEvent(ctx context.Context, arg GetEventParams) (GetEventRow, error) {
@@ -52,14 +53,15 @@ func (q *Queries) GetEvent(ctx context.Context, arg GetEventParams) (GetEventRow
 		&i.CacheWriteTokens,
 		&i.LatencyMs,
 		&i.EventTime,
+		&i.Partial,
 	)
 	return i, err
 }
 
 const insertEvent = `-- name: InsertEvent :one
 INSERT INTO events (org_id, event_id, tenant_id, provider, model, feature, input_tokens, output_tokens,
-                    cache_read_tokens, cache_write_tokens, latency_ms, event_time)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    cache_read_tokens, cache_write_tokens, latency_ms, event_time, partial)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 ON CONFLICT (org_id, event_id) DO NOTHING
 RETURNING event_id
 `
@@ -77,6 +79,7 @@ type InsertEventParams struct {
 	CacheWriteTokens int64
 	LatencyMs        int64
 	EventTime        pgtype.Timestamptz
+	Partial          bool
 }
 
 // Returns the event_id when a row was inserted; no row when the org already has that id.
@@ -94,6 +97,7 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (strin
 		arg.CacheWriteTokens,
 		arg.LatencyMs,
 		arg.EventTime,
+		arg.Partial,
 	)
 	var event_id string
 	err := row.Scan(&event_id)

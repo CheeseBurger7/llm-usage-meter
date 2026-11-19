@@ -1,8 +1,8 @@
 # Hourly rollups
 
 `hourly_usage` holds one row per `(org_id, tenant_id, provider, model, feature, hour_start)` with
-event count, input, output, cache read and cache write token sums, and latency sum and max. Hours
-are UTC.
+event count, input, output, cache read and cache write token sums, latency sum and max, and
+`partial_count`. Hours are UTC.
 
 - **`org_id` leads the primary key**, so two orgs that use the same `tenant_id` and model never
   share a row, and every per-org read is a prefix scan of the key. It references `orgs(id)`.
@@ -12,6 +12,10 @@ are UTC.
   be `NULL`.
 - **The three token sums do not overlap.** `input_tokens` leaves out cache tokens (Q14), so total
   input for a row is `input_tokens + cache_read_tokens + cache_write_tokens`.
+
+- **`partial_count` is how many of the row's events are partial (Q19)**, a subset of
+  `event_count`. Their tokens are in the sums like any other event's. A partial event can only
+  undercount, so statements bill the row as recorded and show the count next to the line.
 
 ## Recompute, not increment
 
@@ -44,6 +48,9 @@ all rows in `hourly_usage`**, because the old rows have no org and may mix sever
 lost: `events` is untouched, and the startup scan finds every hour stale and rebuilds it. On a
 large `events` table that first startup scan re-rolls every hour that has events.
 
+`00008_events_partial.sql` adds `partial_count` with default 0, which is exact for existing rows,
+since every event stored before it is complete. Rows are not rebuilt.
+
 ## Tests
 
 - `internal/rollup/rollup_integration_test.go`: idempotent re-runs and late events; two orgs with
@@ -54,7 +61,10 @@ large `events` table that first startup scan re-rolls every hour that has events
 - `internal/api/isolation_integration_test.go`: the milestone 1 acceptance test. Events ingested
   over HTTP by two orgs are rolled up with `BackfillStale`, and each org's `hourly_usage` rows
   hold only its own totals.
-- `internal/storage/migrate_integration_test.go`: migration 6 applied to a database that already
+- `TestRollupCountsPartialEvents`: partial and complete events in one row give the right
+  `partial_count` on re-runs, and a late partial event is picked up by `BackfillStale`.
+- `internal/storage/migrate_integration_test.go`: migration 8 gives existing rows `false` and `0`,
+  and refuses a `partial_count` outside 0 to `event_count`. Migration 6 applied to a database that already
   has an event and a rollup row, the new key accepts and rejects the right rows, then down and up
   again.
 

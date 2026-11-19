@@ -32,6 +32,7 @@ type Event struct {
 	CacheReadTokens  int64
 	CacheWriteTokens int64
 	Feature          string
+	Partial          bool
 }
 
 type HourlyUsage struct {
@@ -50,6 +51,7 @@ type HourlyUsage struct {
 	Feature          string
 	CacheReadTokens  int64
 	CacheWriteTokens int64
+	PartialCount     int64
 }
 
 type Org struct {

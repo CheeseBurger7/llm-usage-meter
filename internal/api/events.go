@@ -33,6 +33,7 @@ type eventRequest struct {
 	CacheWriteTokens int64     `json:"cache_write_tokens"`
 	LatencyMs        int64     `json:"latency_ms"`
 	Timestamp        time.Time `json:"timestamp"`
+	Partial          bool      `json:"partial"`
 }
 
 type errorResponse struct {
@@ -91,6 +92,7 @@ func (r eventRequest) event() ingest.Event {
 		CacheWriteTokens: r.CacheWriteTokens,
 		LatencyMs:        r.LatencyMs,
 		Timestamp:        r.Timestamp,
+		Partial:          r.Partial,
 	}
 }
 

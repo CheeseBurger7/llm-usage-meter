@@ -134,7 +134,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   checks `CHAT_COMPLETIONS_PROVIDER` against the same rule at startup and
   refuses to start on a bad value; otherwise ingest would reject every
   chat completion event it sends.
-- [ ] **Ingest: `partial` event field (Q19).** Optional boolean, default
+- [~] (PR #36) **Ingest: `partial` event field (Q19).** Optional boolean, default
   false, on single and batch ingest, the client package and a migration
   (`NOT NULL DEFAULT false`). Rollups count partial events per row so
   statements can show them. Integration test.

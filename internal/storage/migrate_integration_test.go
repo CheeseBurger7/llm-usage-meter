@@ -358,3 +358,57 @@ func isCheckViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23514"
 }
+
+// Migration 8 adds events.partial and hourly_usage.partial_count. Rows stored
+// before it were all complete, so they read false and 0 without a rebuild,
+// and partial_count can never exceed event_count.
+func TestEventsPartialMigration(t *testing.T) {
+	ctx := context.Background()
+	pool, provider := newMigrationDB(t)
+
+	if _, err := provider.UpTo(ctx, 7); err != nil {
+		t.Fatalf("migrate to 7: %v", err)
+	}
+	var org string
+	if err := pool.QueryRow(ctx, `INSERT INTO orgs (name) VALUES ('Acme') RETURNING id::text`).Scan(&org); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO events (org_id, event_id, tenant_id, provider, model, input_tokens, output_tokens, latency_ms, event_time)
+	                             VALUES ($1, 'old', 't', 'anthropic', 'm', 1, 1, 1, now())`, org); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO hourly_usage (org_id, tenant_id, provider, model, feature, hour_start, event_count,
+	                                                       input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+	                                                       latency_ms_sum, latency_ms_max, source_ingested_at)
+	                             VALUES ($1, 't', 'anthropic', 'm', '', '2026-01-01T00:00:00Z', 1, 1, 1, 0, 0, 1, 1, now())`, org); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := provider.UpTo(ctx, 8); err != nil {
+		t.Fatalf("migrate to 8: %v", err)
+	}
+	var partial bool
+	if err := pool.QueryRow(ctx, `SELECT partial FROM events WHERE event_id = 'old'`).Scan(&partial); err != nil || partial {
+		t.Fatalf("existing event partial = %v, %v; want false", partial, err)
+	}
+	var partialCount int64
+	if err := pool.QueryRow(ctx, `SELECT partial_count FROM hourly_usage`).Scan(&partialCount); err != nil || partialCount != 0 {
+		t.Fatalf("existing rollup partial_count = %d, %v; want 0", partialCount, err)
+	}
+
+	for _, n := range []int64{-1, 2} {
+		if _, err := pool.Exec(ctx, `UPDATE hourly_usage SET partial_count = $1`, n); !isCheckViolation(err) {
+			t.Errorf("partial_count %d with event_count 1: err = %v; want a check violation", n, err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `UPDATE hourly_usage SET partial_count = 1`); err != nil {
+		t.Errorf("partial_count equal to event_count: %v", err)
+	}
+
+	if _, err := provider.DownTo(ctx, 7); err != nil {
+		t.Fatalf("migrate down to 7: %v", err)
+	}
+	if _, err := provider.UpTo(ctx, 8); err != nil {
+		t.Fatalf("migrate up again: %v", err)
+	}
+}

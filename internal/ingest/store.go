@@ -59,6 +59,7 @@ func (s *Store) Ingest(ctx context.Context, org auth.OrgID, ev Event) (Result, e
 		CacheWriteTokens: ev.CacheWriteTokens,
 		LatencyMs:        ev.LatencyMs,
 		EventTime:        pgtype.Timestamptz{Time: ev.Timestamp, Valid: true},
+		Partial:          ev.Partial,
 	})
 	if err == nil {
 		return Created, nil
@@ -85,6 +86,7 @@ func (s *Store) Ingest(ctx context.Context, org auth.OrgID, ev Event) (Result, e
 		CacheWriteTokens: existing.CacheWriteTokens,
 		LatencyMs:        existing.LatencyMs,
 		Timestamp:        existing.EventTime.Time.UTC(),
+		Partial:          existing.Partial,
 	}
 	if !stored.sameAs(ev) {
 		return 0, ErrConflict

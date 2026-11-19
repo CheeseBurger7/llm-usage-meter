@@ -32,6 +32,11 @@ type Event struct {
 	CacheWriteTokens int64
 	LatencyMs        int64
 	Timestamp        time.Time
+	// Partial marks a call that ended before its final usage report, such
+	// as a stream the caller hung up on (Q19). Its counts can only be too
+	// low. It is part of the payload: a re-send that differs only in
+	// Partial is a conflict, so an event cannot be marked afterwards.
+	Partial bool
 }
 
 // ValidationError lists every field that failed validation.
@@ -118,7 +123,8 @@ func (e Event) sameAs(o Event) bool {
 		e.CacheReadTokens == o.CacheReadTokens &&
 		e.CacheWriteTokens == o.CacheWriteTokens &&
 		e.LatencyMs == o.LatencyMs &&
-		e.Timestamp.Equal(o.Timestamp)
+		e.Timestamp.Equal(o.Timestamp) &&
+		e.Partial == o.Partial
 }
 
 // ErrConflict means the event_id already exists with a different payload.

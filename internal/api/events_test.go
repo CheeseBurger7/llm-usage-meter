@@ -92,6 +92,26 @@ func TestIngestHandlerMapsOptionalFields(t *testing.T) {
 	}
 }
 
+// partial is optional: absent means false, and true reaches the store.
+func TestIngestHandlerMapsPartial(t *testing.T) {
+	for body, want := range map[string]bool{
+		validBody: false,
+		strings.Replace(validBody, `{`, `{"partial":false,`, 1): false,
+		strings.Replace(validBody, `{`, `{"partial":true,`, 1):  true,
+	} {
+		f := &fakeIngester{res: ingest.Created}
+		if got := post(t, f, body).Code; got != http.StatusCreated {
+			t.Fatalf("%s: status = %d, want 201", body, got)
+		}
+		if f.got.Partial != want {
+			t.Fatalf("%s: partial = %v, want %v", body, f.got.Partial, want)
+		}
+	}
+	if got := post(t, &fakeIngester{}, strings.Replace(validBody, `{`, `{"partial":"yes",`, 1)).Code; got != http.StatusBadRequest {
+		t.Fatalf("non-boolean partial: status = %d, want 400", got)
+	}
+}
+
 func TestIngestHandlerTakesOrgFromContext(t *testing.T) {
 	f := &fakeIngester{res: ingest.Created}
 	post(t, f, validBody)

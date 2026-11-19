@@ -640,3 +640,20 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+// partial is left out of the request when false, so a client that never
+// sets it works with a service older than the field, which refuses unknown
+// fields.
+func TestPartialIsOmittedWhenFalse(t *testing.T) {
+	for _, partial := range []bool{false, true} {
+		ev := event("e1")
+		ev.Partial = partial
+		b, err := json.Marshal(ev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(string(b), `"partial"`); got != partial {
+			t.Fatalf("partial=%v: body %s, want partial field present = %v", partial, b, partial)
+		}
+	}
+}
