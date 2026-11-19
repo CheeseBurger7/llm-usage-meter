@@ -205,6 +205,18 @@ func TestBatchHandlerStoreFailure(t *testing.T) {
 	}
 }
 
+// partial is decoded per event in a batch as on the single endpoint.
+func TestBatchHandlerMapsPartial(t *testing.T) {
+	f := &fakeIngester{res: ingest.Created}
+	body := batchBody(strings.Replace(eventJSON("p"), `{`, `{"partial":true,`, 1))
+	if rec := postBatch(t, f, body); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !f.got.Partial {
+		t.Fatalf("partial not passed to the store: %+v", f.got)
+	}
+}
+
 func TestBatchHandlerWithoutIdentity(t *testing.T) {
 	s := &scriptedIngester{}
 	h := api.NewBatchIngestHandler(s, slog.New(slog.NewTextHandler(io.Discard, nil)))

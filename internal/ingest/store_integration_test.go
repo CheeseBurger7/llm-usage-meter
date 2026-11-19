@@ -132,6 +132,41 @@ func TestIngestStoresUsageFields(t *testing.T) {
 	}
 }
 
+// partial reaches its column and is read back for the duplicate check, so a
+// partial event re-sent as partial is a duplicate, and re-sending it as
+// complete is a conflict: an event cannot be marked or unmarked afterwards.
+func TestIngestStoresPartial(t *testing.T) {
+	s, org, pool := newStore(t)
+	ctx := context.Background()
+
+	ev := event()
+	ev.Partial = true
+	if got, err := s.Ingest(ctx, org, ev); err != nil || got != ingest.Created {
+		t.Fatalf("ingest = %v, %v; want Created", got, err)
+	}
+	if got, err := s.Ingest(ctx, org, ev); err != nil || got != ingest.Duplicate {
+		t.Fatalf("re-send = %v, %v; want Duplicate", got, err)
+	}
+	if _, err := s.Ingest(ctx, org, event()); !errors.Is(err, ingest.ErrConflict) {
+		t.Fatalf("re-send as complete: err = %v; want ErrConflict", err)
+	}
+
+	complete := event()
+	complete.EventID = "evt-complete"
+	if _, err := s.Ingest(ctx, org, complete); err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]bool{ev.EventID: true, complete.EventID: false} {
+		var got bool
+		if err := pool.QueryRow(ctx, `SELECT partial FROM events WHERE org_id = $1 AND event_id = $2`, org, id).Scan(&got); err != nil {
+			t.Fatalf("read %s: %v", id, err)
+		}
+		if got != want {
+			t.Fatalf("%s stored partial = %v; want %v", id, got, want)
+		}
+	}
+}
+
 // Provider is case-insensitive (Q13): a re-send that differs only in the case
 // of provider is a duplicate, whichever spelling arrived first, and the column
 // holds the lowercase form. Other labels stay byte for byte.
@@ -192,6 +227,7 @@ func TestIngestConflictOnAnyDifferingField(t *testing.T) {
 		"cache_write_tokens": func(e *ingest.Event) { e.CacheWriteTokens++ },
 		"latency_ms":         func(e *ingest.Event) { e.LatencyMs++ },
 		"timestamp":          func(e *ingest.Event) { e.Timestamp = e.Timestamp.Add(time.Second) },
+		"partial":            func(e *ingest.Event) { e.Partial = true },
 	}
 	s, org, _ := newStore(t)
 	ctx := context.Background()

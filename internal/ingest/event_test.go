@@ -100,6 +100,7 @@ func TestSameAsComparesEveryField(t *testing.T) {
 		"cache_write_tokens": func(e *Event) { e.CacheWriteTokens++ },
 		"latency_ms":         func(e *Event) { e.LatencyMs++ },
 		"timestamp":          func(e *Event) { e.Timestamp = e.Timestamp.Add(time.Second) },
+		"partial":            func(e *Event) { e.Partial = true },
 	}
 	// A field added to Event without a mutation here fails the test.
 	if n := reflect.TypeOf(Event{}).NumField(); n != len(mutations) {
