@@ -164,6 +164,10 @@ would reject every chat completion event it sends. The error names the variable,
 unknown host, because the label picks the price book entry (Q23). The Messages endpoint is always
 labelled `anthropic`.
 
+Such calls are unbilled, so Q23 also adds a startup warning when the host is unknown and
+`CHAT_COMPLETIONS_PROVIDER` is empty; until that task lands, the only signs are the skip counter,
+the per-call log lines and reconciliation.
+
 For a non-streamed chat completion (`"object": "chat.completion"`):
 
 | Event field | Source |

@@ -195,12 +195,12 @@ follow-up task instead of rewriting silently.
 - **Answer:** Keep the default. Cache writes stay inside `input_tokens` and `cache_write_tokens` is 0 on chat completion events, so each token is billed once at the input rate however the provider counts it. The cost is that a provider who prices cache writes above input is under-billed by the difference; reconciliation shows it. Revisit if a provider's docs confirm whether the field is part of `prompt_tokens`.
 
 ### Q23: Which `provider` label does a chat completion get?
-- **Status:** open
+- **Status:** answered
 - **Blocks:** nothing (default applied)
 - **Context:** Many providers and self-hosted servers serve the OpenAI chat completions shape, and the response does not name the provider. The label is part of the `hourly_usage` key and will pick the price book entry, so a wrong label prices usage at the wrong rates while looking correct.
 - **Options:** always `openai` (no setting; wrong for every other provider, including the Anthropic compatibility layer) / derive it from the upstream host for known provider hosts, with a setting to override, and skip chat completions when neither applies (correct where known; one more setting for gateways and self-hosted servers, and their calls are unmetered until it is set) / require the setting always (explicit; the common case needs configuration too)
 - **Default applied:** Derived from the upstream host (`api.openai.com` gives `openai`, `api.anthropic.com` gives `anthropic`), overridden by `CHAT_COMPLETIONS_PROVIDER`. Any other host without the setting: chat completions are forwarded and counted as skipped, with the reason in the log.
-- **Answer:**
+- **Answer:** Keep the default: the label comes from the upstream host for known provider hosts, `CHAT_COMPLETIONS_PROVIDER` overrides it, and any other host without the setting forwards chat completions unmetered. The proxy never guesses a label, because a wrong one prices usage at the wrong rates while looking correct. Add a startup warning so the gap is not silent: when the host is not a known provider host and `CHAT_COMPLETIONS_PROVIDER` is empty, the proxy logs a warning at startup that chat completions will be forwarded but not metered, naming the setting to fix it. Refusing to start was rejected because it would break a proxy used only for Messages through a gateway. Recording under a reserved label was rejected for now because pricing has no rule for a provider without a price book entry.
 
 ### Q24: Do chat completion event ids need a provider namespace?
 - **Status:** open

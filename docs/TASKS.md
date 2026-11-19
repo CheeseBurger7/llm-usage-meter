@@ -147,6 +147,13 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   whether input is billed when a stream ends in an error. Cite the page and
   the date checked in proxy.md. If it is not billed, or the docs do not say,
   keep those streams skipped. Never guess.
+- [ ] **Proxy: warn when chat completions will not be metered (Q23).** At
+  startup, when the `UPSTREAM_URL` host is not a known provider host and
+  `CHAT_COMPLETIONS_PROVIDER` is empty, log one warning that chat
+  completions will be forwarded but not metered, naming
+  `CHAT_COMPLETIONS_PROVIDER` as the fix. No warning for a known host or
+  when the setting is present. Behaviour per call is unchanged. Unit test
+  for each case; update proxy.md.
 - [~] (PR #32) **Proxy: OpenAI-compatible chat completions.** Same behaviour for the
   chat completions response shape, non-streaming. Verify field names against
   the current provider docs. (Split: streaming is the next task.)
