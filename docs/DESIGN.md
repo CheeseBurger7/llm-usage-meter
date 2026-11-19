@@ -135,8 +135,8 @@ be one breaking migration.
 
 | Table | Key | Purpose | Status |
 |---|---|---|---|
-| `events` | `(org_id, event_id)` | Raw usage events. Adds `provider`, `cache_read_tokens`, `cache_write_tokens`, `feature` | Changed |
-| `hourly_usage` | `(org_id, tenant_id, provider, model, feature, hour_start)` | Rollups, with sums for the cache token columns | Changed |
+| `events` | `(org_id, event_id)` | Raw usage events. Adds `provider`, `cache_read_tokens`, `cache_write_tokens`, `feature`, `partial` | Changed |
+| `hourly_usage` | `(org_id, tenant_id, provider, model, feature, hour_start)` | Rollups, with sums for the cache token columns and a count of partial events | Changed |
 | `orgs` | `id` | One row per paying customer | New |
 | `api_keys` | `id`, unique `key_hash` | Hashed keys with scope and revocation time | New |
 | `users` | `id`, unique `email` | Dashboard users | New |

@@ -52,6 +52,7 @@ precision. Otherwise a re-sent event would never compare equal to its stored cop
 | `cache_write_tokens` | no, default 0 | `>= 0` |
 | `latency_ms` | no, default 0 | `>= 0` |
 | `timestamp` | yes | RFC 3339 |
+| `partial` | no, default `false` | Boolean. `true` when the counts are known to be incomplete |
 
 - **`tenant_id`, `model` and `feature` are free-text labels.** They are stored and compared byte
   for byte, with no trimming or case folding: `Claude-Sonnet` and `claude-sonnet` are two models.
@@ -74,9 +75,15 @@ precision. Otherwise a re-sent event would never compare equal to its stored cop
   must subtract them, or those tokens are billed twice (Q14).
 - **`feature` unset is stored as `''`, not `NULL`.** It becomes part of the `hourly_usage` primary
   key, which cannot hold `NULL`. So leaving `feature` out and sending `""` are the same event.
-- **All eleven fields count for the `409` rule.** A re-send that changes `provider`, `feature` or a
-  cache token count, including adding a `feature` to an event first sent without one, is a
-  conflict, not a duplicate. The one exception is the case of `provider`, as above.
+- **`partial` marks counts that can only be too low (Q19).** Set it when the call ended before its
+  final usage report, for example a stream the caller hung up on: the input counts are exact, the
+  output count is what was seen so far. Rollups count partial events per row (`partial_count` in
+  [rollups.md](rollups.md)) so statements can show how many partial calls each line includes.
+  Leaving it out and sending `false` are the same event.
+- **All twelve fields count for the `409` rule.** A re-send that changes `provider`, `feature`,
+  a cache token count or `partial`, including adding a `feature` to an event first sent without
+  one, is a conflict, not a duplicate. So an event cannot be marked partial, or unmarked, after it
+  is stored. The one exception is the case of `provider`, as above.
 
 ## HTTP API
 
@@ -229,6 +236,11 @@ fails without changing data; fix those rows and run it again. **This is a breaki
 client that sends a provider with whitespace, non-ASCII letters or other punctuation now gets
 `400`.
 
+Migration `00008_events_partial.sql` adds `events.partial` (`NOT NULL DEFAULT false`) and
+`hourly_usage.partial_count` (`NOT NULL DEFAULT 0`, between 0 and `event_count`). Existing events
+were all complete, so `false` and `0` are exact for them and no rollup rebuild is needed. Not
+breaking: a client that never sends `partial` is unaffected.
+
 Migrations live in `internal/storage/migrations` (goose, embedded in the binary). Queries are in
 `internal/storage/queries`; run `make generate` to rebuild `internal/storage/gen` with sqlc.
 
@@ -246,15 +258,17 @@ Integration tests use testcontainers and skip when Docker is unavailable. CI run
   same `event_id` in two orgs with different payloads, an unknown org, and concurrent retries.
   A re-send with `provider` in another case is a duplicate and the column holds the lowercase
   form, a provider with a trailing space is refused, and the case of another label is still a
-  conflict.
+  conflict. `partial` reaches its column, a partial re-send is a duplicate, and re-sending it as
+  complete is a conflict.
 - `internal/api/events_test.go`: the handler takes the org from the request context, rejects
-  `org_id` in the payload, and refuses to run without an identity.
+  `org_id` in the payload, and refuses to run without an identity. `partial` defaults to false,
+  reaches the store when true, and a non-boolean value is a `400`.
 - `internal/api/events_integration_test.go`: over HTTP, a second org reuses an `event_id` and gets
   `201`, and each row is stored under the org of the key that sent it. A retry with `provider` in
   another case gets `200`.
 - `internal/api/batch_test.go`: one result per event in request order across every outcome,
-  undecodable events never reach the store, the 500-event and body-size limits, and a store
-  failure answering `500` without partial results.
+  undecodable events never reach the store, the 500-event and body-size limits, a store
+  failure answering `500` without partial results, and `partial` decoded per event.
 - `internal/api/batch_integration_test.go`: over HTTP against Postgres, a mixed batch stores only
   its good events, ids repeated inside a batch, a re-sent batch stores nothing new, stored events
   re-sent with `provider` in another case are duplicates, a second org reusing the same ids, and
