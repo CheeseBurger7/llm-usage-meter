@@ -196,7 +196,8 @@ same day, lists `usage.prompt_tokens` and `usage.completion_tokens` as supported
 - **`prompt_tokens_details.cache_write_tokens` is not read.** The spec calls it "the unadjusted
   number of prompt tokens written to cache" and does not say whether it is part of
   `prompt_tokens`. Leaving those tokens in `input_tokens` bills each token once whichever way it
-  is, at the input rate (Q22).
+  is, at the input rate. Q22 settled this as the rule; a provider that prices cache writes above
+  input is under-billed by the difference until reconciliation shows it.
 - **Audio and image tokens** are part of `prompt_tokens` and `completion_tokens` and are billed as
   text tokens. The event schema has no field for them.
 - **`service_tier`** (flex, priority) changes the provider's price but is not recorded.
