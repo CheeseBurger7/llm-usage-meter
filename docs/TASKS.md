@@ -121,13 +121,24 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   Outcome: the docs (checked 2026-11-20) do not say, so the attempts stay
   skipped; see Q26. The decoding is the next task.
 - [ ] **Proxy: bill declined fallback attempts without output by category
-  (Q26).** Blocked by Q26. Once the owner picks how a `fallback` block is
-  linked to its `usage.iterations` entry, decode only `fallback` blocks (in
+  (Q26).** Deferred: Q26 is answered as keep them skipped. Pick this up only
+  if the reconciliation gap from these attempts grows large for customers,
+  or the provider documents how a `fallback` block is linked to its
+  `usage.iterations` entry. Then decode only `fallback` blocks (in
   a stream, `content_block_start` events of that type), never text, and
   apply the Q21 billed list to the linked zero-output `message` entry, with
   the same counters as final refusals. Unit tests for billed, unbilled and
   unknown categories, streamed and non-streamed, and for a call with server
   tool iterations.
+- [ ] **Proxy: detect double-counted tool-loop iterations after a fallback
+  (Q27).** On a call whose `usage.iterations` holds a `fallback_message`
+  entry, compare the top-level `usage` counts with that entry's counts. If
+  they differ, log a warning naming the message id and both sets of counts
+  (no prompt or output text), and count the call as
+  `fallback_usage_mismatches` in the shutdown log line. Events are not
+  changed. Document the check in proxy.md under Fallback attempts. Unit
+  tests: matching counts (no warning), differing counts with a serving-model
+  tool-loop entry (warning and counter), streamed and non-streamed.
 - [~] (PR #34) **Proxy: meter untagged calls under `_unassigned` (Q18).** A call
   without `X-Meter-Tenant` is recorded under the tenant set by
   `PROXY_DEFAULT_TENANT`, default `_unassigned`. An empty value keeps
