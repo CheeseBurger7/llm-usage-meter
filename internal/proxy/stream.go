@@ -47,6 +47,12 @@ type streamEvent struct {
 		Usage *streamUsage `json:"usage"`
 	} `json:"message"` // message_start
 	Usage *streamUsage `json:"usage"` // message_delta
+	// Delta holds the top-level fields of the message that changed; the
+	// stop reason arrives here (message_delta).
+	Delta *struct {
+		StopReason  *string      `json:"stop_reason"`
+		StopDetails *stopDetails `json:"stop_details"`
+	} `json:"delta"`
 }
 
 // sseMeter reads the usage out of a Messages event stream as its bytes pass
@@ -63,12 +69,14 @@ type sseMeter struct {
 	data     []byte // its data, kept for usage events only
 	dataOver bool
 
-	ev         client.Event
-	iterations []iteration // the last usage.iterations seen
-	haveUsage  bool
-	stopped    bool // message_stop seen: the stream is complete
-	errored    bool // the provider sent an error event
-	unread     bool // a usage event could not be read
+	ev          client.Event
+	iterations  []iteration // the last usage.iterations seen
+	haveUsage   bool
+	stopReason  string
+	stopDetails *stopDetails
+	stopped     bool // message_stop seen: the stream is complete
+	errored     bool // the provider sent an error event
+	unread      bool // a usage event could not be read
 }
 
 func usageEvent(name string) bool {
@@ -156,6 +164,14 @@ func (s *sseMeter) dispatch() {
 			s.apply(m.Usage)
 		}
 		s.apply(e.Usage)
+		if d := e.Delta; d != nil {
+			if d.StopReason != nil {
+				s.stopReason = *d.StopReason
+			}
+			if d.StopDetails != nil {
+				s.stopDetails = d.StopDetails
+			}
+		}
 	}
 }
 
@@ -202,6 +218,7 @@ func (s *sseMeter) result() (metered, string) {
 	s.ev.Provider = ProviderAnthropic
 	m := metered{serving: s.ev}
 	m.declined, m.leftOut = declinedAttempts(s.ev.EventID, s.iterations)
+	m.refusal = refusalWithoutOutput(s.stopReason, s.stopDetails, s.ev.OutputTokens)
 	return m, ""
 }
 
