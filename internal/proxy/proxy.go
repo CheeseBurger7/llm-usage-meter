@@ -120,6 +120,11 @@ type Stats struct {
 	// any output with a missing or unrecognised category. They are
 	// forwarded, not recorded and logged with the category name.
 	RefusalsUnknownCategory uint64
+	// FallbackUsageMismatches counts calls that fell back and whose
+	// top-level counts differ from their fallback_message entry: the serving
+	// hop's earlier tool-loop iterations may be billed twice (OPEN_QUESTIONS
+	// Q27). They are recorded as usual and logged with both sets of counts.
+	FallbackUsageMismatches uint64
 }
 
 // Proxy is an http.Handler. It is safe for concurrent use.
@@ -136,6 +141,7 @@ type Proxy struct {
 
 	recorded, skipped, untagged          atomic.Uint64
 	refusalsUnbilled, refusalsUnknownCat atomic.Uint64
+	fallbackMismatches                   atomic.Uint64
 }
 
 // New returns a Proxy that forwards to cfg.Upstream.
@@ -194,6 +200,7 @@ func (p *Proxy) Stats() Stats {
 	return Stats{
 		Recorded: p.recorded.Load(), Skipped: p.skipped.Load(), Untagged: p.untagged.Load(),
 		RefusalsUnbilled: p.refusalsUnbilled.Load(), RefusalsUnknownCategory: p.refusalsUnknownCat.Load(),
+		FallbackUsageMismatches: p.fallbackMismatches.Load(),
 	}
 }
 
@@ -387,6 +394,9 @@ type metered struct {
 	// refusal is set when the returned attempt was declined before any
 	// output; serving is then recorded only if its category is billed.
 	refusal *refusal
+	// mismatch is the fallback_message entry when its counts differ from
+	// the top-level counts on serving (OPEN_QUESTIONS Q27).
+	mismatch *iteration
 }
 
 // record adds what the proxy knows about the call to the events read from
@@ -404,6 +414,16 @@ func (p *Proxy) record(c *call, m metered, latency time.Duration) {
 	}
 	if m.leftOut > 0 {
 		p.log.Info("proxy: declined attempts without output were not recorded", "attempts", m.leftOut)
+	}
+	if e := m.mismatch; e != nil {
+		// Counts and ids only; the message id points to the provider's logs.
+		p.fallbackMismatches.Add(1)
+		p.log.Warn("proxy: top-level usage differs from the fallback_message entry; tool-loop iterations may be billed twice",
+			"message_id", m.serving.EventID,
+			"top_level_input_tokens", m.serving.InputTokens, "top_level_output_tokens", m.serving.OutputTokens,
+			"top_level_cache_read_tokens", m.serving.CacheReadTokens, "top_level_cache_write_tokens", m.serving.CacheWriteTokens,
+			"entry_input_tokens", e.InputTokens, "entry_output_tokens", e.OutputTokens,
+			"entry_cache_read_tokens", e.CacheReadInputTokens, "entry_cache_write_tokens", e.CacheCreationInputTokens)
 	}
 	if len(events) == 0 {
 		return
@@ -503,6 +523,7 @@ func anthropicEvents(body []byte) (metered, bool) {
 		CacheWriteTokens: m.Usage.CacheCreationInputTokens,
 	}}
 	out.declined, out.leftOut = declinedAttempts(m.ID, m.Usage.Iterations)
+	out.mismatch = fallbackUsageMismatch(out.serving, m.Usage.Iterations)
 	out.refusal = refusalWithoutOutput(m.StopReason, m.StopDetails, m.Usage.OutputTokens)
 	return out, true
 }

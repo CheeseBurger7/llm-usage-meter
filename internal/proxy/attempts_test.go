@@ -241,3 +241,106 @@ func steppingClock(step time.Duration) func() time.Time {
 		return t0.Add(step)
 	}
 }
+
+// toolLoopUsage is a fallback call whose serving model ran a server tool
+// once: a declined attempt, the serving hop's tool-loop iteration (a message
+// entry with the serving model) and the fallback_message entry. Its
+// top-level counts cover the whole serving hop, the reading of the
+// provider's page under which the tool-loop iteration is billed twice
+// (OPEN_QUESTIONS Q27).
+const toolLoopUsage = `"usage": {
+    "input_tokens": 712,
+    "output_tokens": 284,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0,
+    "iterations": [
+      {"type": "message", "model": "claude-fable-5", "input_tokens": 535, "output_tokens": 37},
+      {"type": "message", "model": "claude-opus-4-8", "input_tokens": 300, "output_tokens": 20},
+      {"type": "fallback_message", "model": "claude-opus-4-8", "input_tokens": 412, "output_tokens": 264}
+    ]
+  }`
+
+func TestFallbackUsageMismatch(t *testing.T) {
+	serving := client.Event{InputTokens: 412, OutputTokens: 264, CacheReadTokens: 7, CacheWriteTokens: 3}
+	entry := iteration{Type: "fallback_message", Model: "c", InputTokens: 412, OutputTokens: 264,
+		CacheReadInputTokens: 7, CacheCreationInputTokens: 3}
+	with := func(f func(*iteration)) iteration { e := entry; f(&e); return e }
+	tests := []struct {
+		name string
+		its  []iteration
+		want bool
+	}{
+		{name: "no iterations"},
+		{name: "no fallback entry", its: []iteration{{Type: "message", Model: "a", InputTokens: 1}}},
+		{name: "counts match", its: []iteration{{Type: "message", Model: "a", OutputTokens: 5}, entry}},
+		{name: "input differs", its: []iteration{with(func(e *iteration) { e.InputTokens = 712 })}, want: true},
+		{name: "output differs", its: []iteration{with(func(e *iteration) { e.OutputTokens = 1 })}, want: true},
+		{name: "cache read differs", its: []iteration{with(func(e *iteration) { e.CacheReadInputTokens = 0 })}, want: true},
+		{name: "cache write differs", its: []iteration{with(func(e *iteration) { e.CacheCreationInputTokens = 0 })}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fallbackUsageMismatch(serving, tt.its)
+			if (got != nil) != tt.want {
+				t.Fatalf("mismatch = %+v, want mismatch %v", got, tt.want)
+			}
+			if got != nil && *got != tt.its[len(tt.its)-1] {
+				t.Fatalf("entry = %+v, want %+v", *got, tt.its[len(tt.its)-1])
+			}
+		})
+	}
+}
+
+// The check only reports: a mismatch changes none of the events.
+func TestToolLoopFallbackMismatchIsDetected(t *testing.T) {
+	body := strings.Replace(fallbackBody, fallbackUsage, toolLoopUsage, 1)
+	m, ok := anthropicEvents([]byte(body))
+	if !ok || m.mismatch == nil || m.mismatch.InputTokens != 412 || m.serving.InputTokens != 712 || len(m.declined) != 2 {
+		t.Fatalf("json: metered = %+v, ok = %v", m, ok)
+	}
+	if m, _ := anthropicEvents([]byte(fallbackBody)); m.mismatch != nil {
+		t.Fatalf("json, matching counts: mismatch = %+v", *m.mismatch)
+	}
+
+	start := "event: message_start\n" +
+		`data: {"type":"message_start","message":{"id":"msg_01XFUDYJgAACzvnptvVoYEL","type":"message","model":"claude-fable-5",` +
+		`"usage":{"input_tokens":535,"output_tokens":1}}}` + "\n\n"
+	for usage, want := range map[string]bool{toolLoopUsage: true, fallbackUsage: false} {
+		delta := "event: message_delta\n" +
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},` +
+			strings.Join(strings.Fields(usage), "") + `}` + "\n\n"
+		stream := start + sseContent + delta + sseStop
+		for _, piece := range []int{len(stream), 7} {
+			m, reason := meterStreamAll(stream, piece)
+			if reason != "" || (m.mismatch != nil) != want {
+				t.Fatalf("stream, mismatch wanted %v, piece %d: metered = %+v, reason = %q", want, piece, m, reason)
+			}
+		}
+	}
+}
+
+// Through the proxy a mismatch is counted and logged with counts only, and
+// the call is still recorded with every event.
+func TestToolLoopFallbackMismatchIsCountedAndLogged(t *testing.T) {
+	body := strings.Replace(fallbackBody, fallbackUsage, toolLoopUsage, 1)
+	f := newFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	})
+	if resp, _ := f.post(t, "/v1/messages", tags); resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	f.waitStats(t, Stats{Recorded: 1, FallbackUsageMismatches: 1})
+	if n := len(f.rec.all()); n != 3 {
+		t.Fatalf("recorded %d events, want 3", n)
+	}
+	logs := f.logs.String()
+	for _, want := range []string{"fallback_message entry", "msg_01XFUDYJgAACzvnptvVoYEL", `"top_level_input_tokens":712`, `"entry_input_tokens":412`} {
+		if !strings.Contains(logs, want) {
+			t.Fatalf("log lacks %q:\n%s", want, logs)
+		}
+	}
+	if strings.Contains(logs, secretCompletion) || strings.Contains(logs, "tenant-a") {
+		t.Fatal("log contains the completion or a header value")
+	}
+}

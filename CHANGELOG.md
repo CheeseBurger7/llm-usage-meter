@@ -4,6 +4,11 @@ Notable changes, newest first. Breaking changes are marked **Breaking**.
 
 ## Unreleased
 
+- The proxy warns when a call that fell back has top-level usage counts that differ from its
+  `fallback_message` entry, and counts those calls as `fallback_usage_mismatches` in the
+  shutdown log line (Q27). Such a call may bill the serving model's tool-loop iterations twice.
+  Events are unchanged. See [docs/proxy.md](docs/proxy.md#fallback-attempts).
+
 - No behaviour change: a declined fallback attempt without output is still not recorded. The
   provider's docs do not say which `usage.iterations` entry a `fallback` block belongs to, so
   its category cannot be read safely (Q26). [docs/proxy.md](docs/proxy.md#fallback-attempts)

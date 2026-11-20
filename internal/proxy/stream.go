@@ -218,6 +218,7 @@ func (s *sseMeter) result() (metered, string) {
 	s.ev.Provider = ProviderAnthropic
 	m := metered{serving: s.ev}
 	m.declined, m.leftOut = declinedAttempts(s.ev.EventID, s.iterations)
+	m.mismatch = fallbackUsageMismatch(s.ev, s.iterations)
 	m.refusal = refusalWithoutOutput(s.stopReason, s.stopDetails, s.ev.OutputTokens)
 	return m, ""
 }
