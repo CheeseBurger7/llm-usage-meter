@@ -145,3 +145,40 @@ func TestLoadConfigRejectsBadChatProvider(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadConfigBilledRefusals(t *testing.T) {
+	tests := map[string]struct {
+		set   bool
+		value string
+		want  []string // nil: the built-in list
+		err   bool
+	}{
+		"unset":          {want: nil},
+		"empty":          {set: true, value: "", want: []string{}}, // bill no refusal without output
+		"list":           {set: true, value: " bio, cyber ,,frontier_llm", want: []string{"bio", "cyber", "frontier_llm"}},
+		"uppercase":      {set: true, value: "Bio", err: true},
+		"space in entry": {set: true, value: "bio harm", err: true},
+	}
+	for name, tt := range tests {
+		m := map[string]string{"METER_ENDPOINT": "https://meter.example.com", "METER_INGEST_KEY": "lum_ingest_abc"}
+		if tt.set {
+			m["PROXY_BILLED_REFUSAL_CATEGORIES"] = tt.value
+		}
+		cfg, err := loadConfig(env(m))
+		if tt.err {
+			if err == nil || !strings.Contains(err.Error(), "PROXY_BILLED_REFUSAL_CATEGORIES") || strings.Contains(err.Error(), tt.value) {
+				t.Errorf("%s: err = %v, want one naming the variable and not the value", name, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: loadConfig: %v", name, err)
+		}
+		if (cfg.billedRefusals == nil) != (tt.want == nil) || strings.Join(cfg.billedRefusals, ",") != strings.Join(tt.want, ",") {
+			t.Errorf("%s: billed refusals = %#v, want %#v", name, cfg.billedRefusals, tt.want)
+		}
+	}
+	if got := billedList(nil); got != "bio,frontier_llm,reasoning_extraction" {
+		t.Errorf("built-in list = %q", got)
+	}
+}
