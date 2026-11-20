@@ -71,6 +71,37 @@ func declinedAttempts(messageID string, its []iteration) (events []client.Event,
 	return events, leftOut
 }
 
+// fallbackUsageMismatch returns the fallback_message entry of a call that
+// fell back when its counts differ from the top-level counts on the serving
+// event, and nil otherwise (OPEN_QUESTIONS Q27).
+//
+// The provider says the top-level counts describe only the attempt that
+// produced the returned message, but not whether that is the serving hop's
+// last iteration or the whole hop. The fallback_message entry is the last
+// iteration. When the two differ, top-level covers the hop's earlier
+// tool-loop iterations too, and those are already recorded as declined
+// attempts, so they are billed twice. Without server tools the hop has one
+// iteration and the counts always match. The check only reports: no event
+// is changed.
+func fallbackUsageMismatch(serving client.Event, its []iteration) *iteration {
+	var entry *iteration
+	for i := range its {
+		if its[i].Type == iterationFallback {
+			entry = &its[i]
+		}
+	}
+	if entry == nil {
+		return nil
+	}
+	if entry.InputTokens == serving.InputTokens && entry.OutputTokens == serving.OutputTokens &&
+		entry.CacheReadInputTokens == serving.CacheReadTokens &&
+		entry.CacheCreationInputTokens == serving.CacheWriteTokens {
+		return nil
+	}
+	e := *entry
+	return &e
+}
+
 // attemptEventID is the event id of the declined attempt at the given
 // position in usage.iterations. The attempts of a call share one message
 // id, which stays the id of the serving attempt's event, so a declined

@@ -161,6 +161,18 @@ event and the proxy logs how many it left out. Where the provider billed one (ca
 reconciliation shows the gap; nothing is over-billed. Q26 in
 [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) records the options.
 
+**Checked: tool-loop iterations of the serving model.** The same SDK note means a `message` entry
+with output can be the serving model's earlier tool-loop iteration rather than a declined hop.
+The proxy records it as an attempt all the same. That is correct if the top-level counts cover
+only the serving hop's last iteration, which is the `fallback_message` entry. If they cover the
+whole hop, those iterations are billed twice, and the provider's page does not say which (Q27).
+The proxy does not change any event over this. Instead it compares the top-level counts with the
+`fallback_message` entry on every call that fell back. A call without server tools has one
+iteration in the serving hop, so the two always match. When any of the four counts differ, the
+call is recorded as usual, logged as a warning with the message id and both sets of counts (no
+text), and counted in `fallback_usage_mismatches` in the shutdown log line. A non-zero count means
+tenants are being over-billed for tool-using fallback calls, and the fix in Q27 applies.
+
 ## Refusals
 
 A safety classifier can decline a call. The provider then answers `200` with
