@@ -32,9 +32,12 @@ type iteration struct {
 //
 // The provider bills every attempt that produced output, at the rates of
 // the model that ran it. An attempt that declined before any output is
-// billed only for some refusal categories, and the category is not part of
-// the usage block, so those attempts are left out instead of guessed at
-// (OPEN_QUESTIONS Q21).
+// billed only for some refusal categories. The category is not part of the
+// usage block but of a fallback block in content, and the provider does not
+// document which usage.iterations entry a fallback block belongs to (the
+// serving hop's earlier tool-loop iterations are message entries too), so
+// those attempts are left out instead of guessed at (OPEN_QUESTIONS Q21,
+// Q26).
 //
 // Entries are read only when a fallback_message entry is present: without
 // one, usage.iterations belongs to another feature and a "message" entry

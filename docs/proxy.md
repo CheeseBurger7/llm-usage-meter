@@ -135,13 +135,31 @@ that declined, so the serving model is taken from the `fallback_message` entry.
 `usage.iterations` is read only when it holds a `fallback_message` entry. Other features use the
 same array for other things, and a `message` entry there is not a declined attempt.
 
-**Not recorded yet: an attempt that declined before any output.** Whether the provider bills it
-depends on the refusal category, which is not in the usage block but in a `fallback` block in
-`content` that the proxy does not decode yet. The proxy does not guess: the attempt gives no
-event and the proxy logs how many it left out. Where such an attempt was billed, the tenant is
-under-billed by its input tokens until reconciliation shows the gap. Q21 in
-[OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) settled it: a follow-up task in [TASKS.md](TASKS.md)
-applies the [Refusals](#refusals) rule to these attempts too.
+**Not recorded: an attempt that declined before any output.** Whether the provider bills it
+depends on its refusal category. The category is not in the usage block but in a `fallback`
+block in `content`: `{"type": "fallback", "from": {"model": ...}, "to": {"model": ...},
+"trigger": {"type": "refusal", "category": ...}}`, one block per hop that declined (in a stream,
+a `content_block_start` and `content_block_stop` pair with no deltas). Q21 asked for the
+[Refusals](#refusals) rule to be applied to these attempts once the provider's docs say which
+`usage.iterations` entry each `fallback` block belongs to. Checked on 2026-11-20, they do not:
+
+- The [Refusals and fallback](https://platform.claude.com/docs/en/build-with-claude/refusals-and-fallback)
+  page says each handoff gets a `fallback` block and each earlier hop a `message` entry, but
+  names no index, id or order that links the two.
+- The provider's Go SDK (`anthropics/anthropic-sdk-go`, `betamessage.go` at `698c61f`, checked
+  2026-11-20), whose types are generated from the API spec, says on
+  `BetaFallbackMessageIterationUsage` that "a declined hop and the serving hop's earlier
+  tool-loop iterations produce `message` entries". So counting `message` entries does not
+  count declined hops once the serving model runs server tools.
+- `from.model` echoes the model string the caller sent (an alias or a canonical id) when the
+  declining hop is the requested model, so matching blocks to entries by model is not
+  reliable either.
+
+So the proxy does not decode `fallback` blocks and does not guess: such an attempt gives no
+event and the proxy logs how many it left out. Where the provider billed one (category `bio`,
+`frontier_llm` or `reasoning_extraction`), the tenant is under-billed by its tokens until
+reconciliation shows the gap; nothing is over-billed. Q26 in
+[OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) records the options.
 
 ## Refusals
 

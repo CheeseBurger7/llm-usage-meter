@@ -4,6 +4,11 @@ Notable changes, newest first. Breaking changes are marked **Breaking**.
 
 ## Unreleased
 
+- No behaviour change: a declined fallback attempt without output is still not recorded. The
+  provider's docs do not say which `usage.iterations` entry a `fallback` block belongs to, so
+  its category cannot be read safely (Q26). [docs/proxy.md](docs/proxy.md#fallback-attempts)
+  now cites the page and the SDK type checked.
+
 - The proxy no longer records a call that ended in a refusal before any output unless the
   refusal category is one the provider bills (Q21): `bio`, `frontier_llm` and
   `reasoning_extraction` by default, replaced by `PROXY_BILLED_REFUSAL_CATEGORIES`. Such calls

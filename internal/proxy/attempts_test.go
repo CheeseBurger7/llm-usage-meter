@@ -140,6 +140,42 @@ func TestStreamFallbackAttempts(t *testing.T) {
 	}
 }
 
+// A declined attempt without output stays left out even when the fallback
+// block names a billed category (OPEN_QUESTIONS Q26). The provider documents
+// neither a link from a fallback block to its usage.iterations entry nor a
+// one-to-one order: the serving hop's earlier tool-loop iterations are
+// message entries too, and from.model can be the alias the caller sent.
+func TestDeclinedAttemptWithoutOutputIgnoresFallbackCategory(t *testing.T) {
+	noOutput := strings.Replace(fallbackBody, `"output_tokens": 37`, `"output_tokens": 0`, 1)
+	for _, category := range []string{`"bio"`, `"frontier_llm"`, `"reasoning_extraction"`, `"cyber"`, `null`} {
+		body := strings.Replace(noOutput, `"category": "cyber"`, `"category": `+category, 1)
+		m, ok := anthropicEvents([]byte(body))
+		if !ok || m.serving != fallbackServing || len(m.declined) != 0 || m.leftOut != 1 {
+			t.Fatalf("json, category %s: metered = %+v, ok = %v", category, m, ok)
+		}
+	}
+
+	// In a stream the decline before output puts the fallback block first.
+	start := "event: message_start\n" +
+		`data: {"type":"message_start","message":{"id":"msg_01XFUDYJgAACzvnptvVoYEL","type":"message","model":"claude-opus-4-8",` +
+		`"usage":{"input_tokens":412,"output_tokens":1}}}` + "\n\n"
+	fallbackBlock := "event: content_block_start\n" +
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"fallback",` +
+		`"from":{"model":"claude-fable-5"},"to":{"model":"claude-opus-4-8"},"trigger":{"type":"refusal","category":"bio"}}}` + "\n\n" +
+		"event: content_block_stop\n" + `data: {"type":"content_block_stop","index":0}` + "\n\n"
+	usage := strings.Replace(fallbackUsage, `"output_tokens": 37`, `"output_tokens": 0`, 1)
+	delta := "event: message_delta\n" +
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},` +
+		strings.Join(strings.Fields(usage), "") + `}` + "\n\n"
+	body := start + fallbackBlock + strings.ReplaceAll(sseContent, `"index":0`, `"index":1`) + delta + sseStop
+	for _, piece := range []int{len(body), 1, 7} {
+		m, reason := meterStreamAll(body, piece)
+		if reason != "" || m.serving != fallbackServing || len(m.declined) != 0 || m.leftOut != 1 {
+			t.Fatalf("stream, piece %d: metered = %+v, reason = %q", piece, m, reason)
+		}
+	}
+}
+
 // One call through the proxy that fell back gives two events: the same
 // tags and timestamp on both, the call's latency on the serving one only.
 func TestFallbackCallRecordsOneEventPerBillableAttempt(t *testing.T) {
