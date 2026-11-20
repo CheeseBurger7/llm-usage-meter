@@ -121,8 +121,10 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   Outcome: the docs (checked 2026-11-20) do not say, so the attempts stay
   skipped; see Q26. The decoding is the next task.
 - [ ] **Proxy: bill declined fallback attempts without output by category
-  (Q26).** Blocked by Q26. Once the owner picks how a `fallback` block is
-  linked to its `usage.iterations` entry, decode only `fallback` blocks (in
+  (Q26).** Deferred: Q26 is answered as keep them skipped. Pick this up only
+  if the reconciliation gap from these attempts grows large for customers,
+  or the provider documents how a `fallback` block is linked to its
+  `usage.iterations` entry. Then decode only `fallback` blocks (in
   a stream, `content_block_start` events of that type), never text, and
   apply the Q21 billed list to the linked zero-output `message` entry, with
   the same counters as final refusals. Unit tests for billed, unbilled and
