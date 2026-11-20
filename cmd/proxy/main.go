@@ -46,6 +46,9 @@ type config struct {
 	// defaultTenant is the tenant of calls without X-Meter-Tenant. Empty:
 	// those calls are forwarded but not metered.
 	defaultTenant string
+	// billedRefusals replaces the built-in list of refusal categories the
+	// provider bills before any output. Nil: the built-in list.
+	billedRefusals []string
 }
 
 // maxTenantLen matches the tenant_id limit in ingest; a longer default
@@ -111,7 +114,30 @@ func loadConfig(lookupEnv func(string) (string, bool)) (config, error) {
 		return config{}, fmt.Errorf("PROXY_DEFAULT_TENANT must be at most %d bytes", maxTenantLen)
 	}
 	cfg.defaultTenant = tenant
+	// Unset: the built-in list (Q21). Set: a comma-separated list that
+	// replaces it; set to empty bills no refusal without output.
+	if raw, ok := lookupEnv("PROXY_BILLED_REFUSAL_CATEGORIES"); ok {
+		cfg.billedRefusals = parseList(raw)
+		for _, c := range cfg.billedRefusals {
+			if !proxy.ValidRefusalCategory(c) {
+				return config{}, errors.New("PROXY_BILLED_REFUSAL_CATEGORIES entries must be lowercase letters, digits or underscores, at most 64 each")
+			}
+		}
+	}
 	return cfg, nil
+}
+
+// parseList splits a comma-separated value, trimming spaces and dropping
+// empty entries. The result is never nil, so an empty value can be told
+// apart from an unset one.
+func parseList(raw string) []string {
+	out := []string{}
+	for _, v := range strings.Split(raw, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func run(log *slog.Logger) error {
@@ -125,7 +151,7 @@ func run(log *slog.Logger) error {
 	}
 	handler, err := proxy.New(proxy.Config{
 		Upstream: cfg.upstream, Recorder: meter, Log: log, ChatProvider: cfg.chatProvider,
-		DefaultTenant: cfg.defaultTenant,
+		DefaultTenant: cfg.defaultTenant, BilledRefusalCategories: cfg.billedRefusals,
 	})
 	if err != nil {
 		return err
@@ -144,7 +170,8 @@ func run(log *slog.Logger) error {
 	go func() {
 		log.Info("listening", "addr", cfg.listenAddr, "upstream", cfg.upstream.Host,
 			"chat_completions_provider", cfg.chatProvider,
-			"default_tenant", cfg.defaultTenant)
+			"default_tenant", cfg.defaultTenant,
+			"billed_refusal_categories", billedList(cfg.billedRefusals))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serveErr <- err
 		}
@@ -168,6 +195,15 @@ func run(log *slog.Logger) error {
 	ps, ms := handler.Stats(), meter.Stats()
 	log.Info("stopped", "calls_recorded", ps.Recorded, "calls_skipped", ps.Skipped,
 		"calls_untagged", ps.Untagged,
+		"refusals_unbilled", ps.RefusalsUnbilled, "refusals_unknown_category", ps.RefusalsUnknownCategory,
 		"events_sent", ms.Sent, "events_rejected", ms.Rejected, "events_dropped", ms.Dropped)
 	return err
+}
+
+// billedList is the billed refusal list in effect, for the startup log.
+func billedList(configured []string) string {
+	if configured == nil {
+		configured = proxy.DefaultBilledRefusalCategories
+	}
+	return strings.Join(configured, ",")
 }

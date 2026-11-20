@@ -4,7 +4,8 @@
 // without changing them. For a successful Anthropic Messages call, streamed
 // or not, it also reads the usage block of the response and records one
 // usage event, plus one for each attempt on another model that declined
-// after producing output. A non-streamed OpenAI-compatible chat completion
+// after producing output. A call that ended in a refusal before any output
+// is recorded only when the provider bills its category. A non-streamed OpenAI-compatible chat completion
 // gives one event too. Only token counts and the caller's tags leave the proxy: request
 // and response bodies and provider keys are never stored, logged or sent to
 // the metering service.
@@ -93,6 +94,11 @@ type Config struct {
 	// example UnassignedTenant. Empty means such calls are forwarded and
 	// counted as skipped.
 	DefaultTenant string
+	// BilledRefusalCategories lists the refusal categories the provider
+	// bills when the refusal arrives before any output. Nil means
+	// DefaultBilledRefusalCategories; an empty, non-nil list bills none.
+	// Each entry must match ^[a-z0-9_]{1,64}$, or New fails.
+	BilledRefusalCategories []string
 }
 
 // Stats counts what happened to calls that were candidates for metering:
@@ -106,6 +112,14 @@ type Stats struct {
 	// Untagged counts the recorded calls that had no TenantHeader and went
 	// to Config.DefaultTenant. It is part of Recorded, not added to it.
 	Untagged uint64
+	// RefusalsUnbilled counts calls that ended in a refusal before any
+	// output, in a known category that is not on the billed list. They are
+	// forwarded and not recorded, since the provider does not bill them.
+	RefusalsUnbilled uint64
+	// RefusalsUnknownCategory counts calls that ended in a refusal before
+	// any output with a missing or unrecognised category. They are
+	// forwarded, not recorded and logged with the category name.
+	RefusalsUnknownCategory uint64
 }
 
 // Proxy is an http.Handler. It is safe for concurrent use.
@@ -118,8 +132,10 @@ type Proxy struct {
 	chat string // provider label for chat completions; empty: not metered
 	// defaultTenant replaces a missing TenantHeader; empty: not metered.
 	defaultTenant string
+	refusals      refusalPolicy
 
-	recorded, skipped, untagged atomic.Uint64
+	recorded, skipped, untagged          atomic.Uint64
+	refusalsUnbilled, refusalsUnknownCat atomic.Uint64
 }
 
 // New returns a Proxy that forwards to cfg.Upstream.
@@ -137,6 +153,10 @@ func New(cfg Config) (*Proxy, error) {
 			return nil, fmt.Errorf("proxy: chat provider label %s", reason)
 		}
 	}
+	refusals, err := newRefusalPolicy(cfg.BilledRefusalCategories)
+	if err != nil {
+		return nil, fmt.Errorf("proxy: %w", err)
+	}
 	p := &Proxy{
 		rec:  cfg.Recorder,
 		log:  cfg.Log,
@@ -145,6 +165,7 @@ func New(cfg Config) (*Proxy, error) {
 		chat: chat,
 
 		defaultTenant: cfg.DefaultTenant,
+		refusals:      refusals,
 	}
 	if p.log == nil {
 		p.log = slog.New(slog.DiscardHandler)
@@ -170,7 +191,10 @@ func New(cfg Config) (*Proxy, error) {
 
 // Stats returns the current counters.
 func (p *Proxy) Stats() Stats {
-	return Stats{Recorded: p.recorded.Load(), Skipped: p.skipped.Load(), Untagged: p.untagged.Load()}
+	return Stats{
+		Recorded: p.recorded.Load(), Skipped: p.skipped.Load(), Untagged: p.untagged.Load(),
+		RefusalsUnbilled: p.refusalsUnbilled.Load(), RefusalsUnknownCategory: p.refusalsUnknownCat.Load(),
+	}
 }
 
 // call is what the proxy remembers about one request until its response
@@ -360,6 +384,9 @@ type metered struct {
 	// leftOut counts declined attempts that were not recorded because the
 	// usage block cannot tell whether the provider bills them.
 	leftOut int
+	// refusal is set when the returned attempt was declined before any
+	// output; serving is then recorded only if its category is billed.
+	refusal *refusal
 }
 
 // record adds what the proxy knows about the call to the events read from
@@ -370,7 +397,18 @@ type metered struct {
 // on every event would count it several times in the hourly sums.
 func (p *Proxy) record(c *call, m metered, latency time.Duration) {
 	m.serving.LatencyMs = latency.Milliseconds()
-	for _, ev := range append([]client.Event{m.serving}, m.declined...) {
+	events := append([]client.Event{m.serving}, m.declined...)
+	if m.refusal != nil && !p.refusalBilled(*m.refusal) {
+		// Attempts that declined after output are billed all the same.
+		events = events[1:]
+	}
+	if m.leftOut > 0 {
+		p.log.Info("proxy: declined attempts without output were not recorded", "attempts", m.leftOut)
+	}
+	if len(events) == 0 {
+		return
+	}
+	for _, ev := range events {
 		ev.TenantID = c.tenant
 		ev.Feature = c.feature
 		ev.Timestamp = c.start.UTC()
@@ -383,9 +421,24 @@ func (p *Proxy) record(c *call, m metered, latency time.Duration) {
 		// header value is logged.
 		p.log.Warn("proxy: call metered under the default tenant", "reason", "request has no "+TenantHeader+" header")
 	}
-	if m.leftOut > 0 {
-		p.log.Info("proxy: declined attempts without output were not recorded", "attempts", m.leftOut)
+}
+
+// refusalBilled reports whether a refusal without output is billed, and
+// counts and logs the ones that are not (OPEN_QUESTIONS Q21). The category
+// names a policy area and carries nothing from the request, so it is
+// logged.
+func (p *Proxy) refusalBilled(r refusal) bool {
+	switch p.refusals.verdict(r) {
+	case refusalUnbilled:
+		p.refusalsUnbilled.Add(1)
+		p.log.Info("proxy: refusal without output not recorded", "reason", "category is not billed", "category", r.category)
+		return false
+	case refusalUnknown:
+		p.refusalsUnknownCat.Add(1)
+		p.log.Warn("proxy: refusal without output not recorded", "reason", "category is missing or unrecognised", "category", r.category)
+		return false
 	}
+	return true
 }
 
 func gunzip(data []byte, limit int64) ([]byte, bool) {
@@ -404,10 +457,12 @@ func gunzip(data []byte, limit int64) ([]byte, bool) {
 // Field names follow the "Create a Message" API reference; everything else,
 // including the content, is ignored by the decoder.
 type anthropicMessage struct {
-	Type  string `json:"type"`
-	ID    string `json:"id"`
-	Model string `json:"model"`
-	Usage *struct {
+	Type        string       `json:"type"`
+	ID          string       `json:"id"`
+	Model       string       `json:"model"`
+	StopReason  string       `json:"stop_reason"`
+	StopDetails *stopDetails `json:"stop_details"`
+	Usage       *struct {
 		InputTokens  int64 `json:"input_tokens"`
 		OutputTokens int64 `json:"output_tokens"`
 		// Both cache counts may be null, which decodes to 0.
@@ -448,5 +503,6 @@ func anthropicEvents(body []byte) (metered, bool) {
 		CacheWriteTokens: m.Usage.CacheCreationInputTokens,
 	}}
 	out.declined, out.leftOut = declinedAttempts(m.ID, m.Usage.Iterations)
+	out.refusal = refusalWithoutOutput(m.StopReason, m.StopDetails, m.Usage.OutputTokens)
 	return out, true
 }
