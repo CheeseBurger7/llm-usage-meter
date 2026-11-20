@@ -98,7 +98,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   ids that stay unique and stable (the message id is shared by the attempts).
   Verify against the provider's current refusals and fallback docs which
   attempts are billed; never guess.
-- [ ] **Proxy: final refusals billed by category (Q21).** A call that ended
+- [~] (PR #38) **Proxy: final refusals billed by category (Q21).** A call that ended
   in a refusal with `output_tokens` of 0 is recorded only when the category
   in `stop_details` (in a stream, the `message_delta`) is on the billed
   list. The list is built in (`bio`, `frontier_llm`,
