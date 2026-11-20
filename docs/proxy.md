@@ -158,7 +158,10 @@ page, checked on 2026-11-20:
 
 So for a call whose returned attempt ended in a refusal with `output_tokens` of 0, the proxy
 reads the category (from the top-level `stop_details`, or in a stream from `delta.stop_details`
-of `message_delta`, next to `stop_reason`) and decides (Q21):
+of `message_delta`, next to `stop_reason`) and decides (Q21). The provider's docs show no streamed
+refusal; the stream path comes from `MessageDeltaEventDelta` in the provider's Go SDK
+(`anthropics/anthropic-sdk-go`, `message.go` at `cbcdbf6`, checked 2026-11-20), which has no
+top-level `stop_details` on the event (Q25):
 
 | Category | What happens | Counter in the shutdown log |
 | --- | --- | --- |
