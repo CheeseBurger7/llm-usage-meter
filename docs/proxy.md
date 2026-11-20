@@ -42,6 +42,7 @@ the two headers as default or per-request headers.
 | `LISTEN_ADDR` | `127.0.0.1:8081` | Listen address |
 | `CHAT_COMPLETIONS_PROVIDER` | from the upstream host, see below | `provider` label on events from chat completions |
 | `PROXY_DEFAULT_TENANT` | `_unassigned` | `tenant_id` of calls without `X-Meter-Tenant`. Set it to empty to forward those calls without metering. See [Untagged calls](#untagged-calls) |
+| `PROXY_BILLED_REFUSAL_CATEGORIES` | `bio,frontier_llm,reasoning_extraction` | Comma-separated refusal categories the provider bills before any output. Replaces the built-in list; set to empty to bill none. See [Refusals](#refusals) |
 
 | Header | Required | Meaning |
 | --- | --- | --- |
@@ -84,7 +85,7 @@ proxy passes each chunk to the caller as it arrives and scans the same bytes for
 | Stream event | What the proxy reads |
 | --- | --- |
 | `message_start` | `message.id` (the `event_id`), `message.model`, and the first counts in `message.usage` |
-| `message_delta` | `usage`, with the same four count names as above. Each count that is present replaces the value seen so far |
+| `message_delta` | `usage`, with the same four count names as above. Each count that is present replaces the value seen so far. Also `delta.stop_reason` and `delta.stop_details`, for [refusals](#refusals) |
 | `message_stop` | Nothing: it marks the stream as complete, and `latency_ms` ends here |
 
 The provider's [Streaming messages](https://platform.claude.com/docs/en/build-with-claude/streaming)
@@ -134,17 +135,55 @@ that declined, so the serving model is taken from the `fallback_message` entry.
 `usage.iterations` is read only when it holds a `fallback_message` entry. Other features use the
 same array for other things, and a `message` entry there is not a declined attempt.
 
-**Not recorded: an attempt that declined before any output.** Whether the provider bills it
-depends on the refusal category, which is not in the usage block, and the provider states that
-the list of billed categories may change. The proxy does not guess: the attempt gives no event
-and the proxy logs how many it left out. Where such an attempt was billed, the tenant is
-under-billed by its input tokens until reconciliation shows the gap. For the same reason a call
-that ended in a refusal with no fallback is still recorded with its counts, as before this change,
-even where the provider does not bill it. Q21 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) settled
-both: once the two refusal tasks in [TASKS.md](TASKS.md) land, a refusal without output is
-recorded only when its category is on the billed list (built in, replaced by
-`PROXY_BILLED_REFUSAL_CATEGORIES`). Known unbilled categories and unknown or missing ones are
-skipped and counted, so a tenant is not charged for a refusal the provider did not bill.
+**Not recorded yet: an attempt that declined before any output.** Whether the provider bills it
+depends on the refusal category, which is not in the usage block but in a `fallback` block in
+`content` that the proxy does not decode yet. The proxy does not guess: the attempt gives no
+event and the proxy logs how many it left out. Where such an attempt was billed, the tenant is
+under-billed by its input tokens until reconciliation shows the gap. Q21 in
+[OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) settled it: a follow-up task in [TASKS.md](TASKS.md)
+applies the [Refusals](#refusals) rule to these attempts too.
+
+## Refusals
+
+A safety classifier can decline a call. The provider then answers `200` with
+`stop_reason: "refusal"` and a `stop_details` object whose `category` names the policy area.
+Per the provider's
+[Refusals and fallback](https://platform.claude.com/docs/en/build-with-claude/refusals-and-fallback)
+page, checked on 2026-11-20:
+
+- A refusal after some output is billed: input and the output already produced.
+- A refusal before any output is billed only when its category is `bio`, `frontier_llm` or
+  `reasoning_extraction`. The other documented categories, `cyber` and `general_harms`, and a
+  `null` category are not billed. The provider states this list may change.
+
+So for a call whose returned attempt ended in a refusal with `output_tokens` of 0, the proxy
+reads the category (from the top-level `stop_details`, or in a stream from `delta.stop_details`
+of `message_delta`, next to `stop_reason`) and decides (Q21):
+
+| Category | What happens | Counter in the shutdown log |
+| --- | --- | --- |
+| On the billed list | Recorded like any other call | `calls_recorded` |
+| Documented but not on the list | Forwarded, not recorded, logged at info with the category | `refusals_unbilled` |
+| Missing, `null` or not documented | Forwarded, not recorded, logged as a warning with the category | `refusals_unknown_category` |
+
+A refusal with output above 0 is recorded whatever its category. Nothing in `content` is read
+for this: the category comes from `stop_details` only. The category names a policy area, not
+anything from the request, so it is logged.
+
+The billed list is built in and replaced by `PROXY_BILLED_REFUSAL_CATEGORIES`, so a customer can
+follow a change at the provider without a new proxy release. Entries must be lowercase letters,
+digits or underscores, or the proxy refuses to start. A category on the replaced list is billed
+even if the proxy does not know it, which covers a category the provider adds. The startup log
+line shows the list in effect.
+
+What can still go wrong: when the provider stops billing a category and the list has not caught
+up, tenants are charged for those refusals; compare the date above with the provider page. A
+category the provider starts billing lands under `refusals_unknown_category` and is under-billed
+until the list is updated; the counter and reconciliation show it.
+
+When every attempt of a fallback call was declined, the attempts that declined after producing
+output are recorded as in [Fallback attempts](#fallback-attempts) even if the final refusal is not
+billed.
 
 ## Chat completions
 

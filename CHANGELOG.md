@@ -4,6 +4,13 @@ Notable changes, newest first. Breaking changes are marked **Breaking**.
 
 ## Unreleased
 
+- The proxy no longer records a call that ended in a refusal before any output unless the
+  refusal category is one the provider bills (Q21): `bio`, `frontier_llm` and
+  `reasoning_extraction` by default, replaced by `PROXY_BILLED_REFUSAL_CATEGORIES`. Such calls
+  were recorded before, which charged tenants for refusals the provider did not bill. Skipped
+  refusals are counted as `refusals_unbilled` or `refusals_unknown_category`. See
+  [docs/proxy.md](docs/proxy.md#refusals).
+
 - Events take an optional `partial` boolean, default `false`, on `POST /v1/events`,
   `POST /v1/events/batch` and in the Go client (Q19). It marks a call whose counts are known to
   be incomplete, such as a stream the caller hung up on. `hourly_usage` gains `partial_count`.
