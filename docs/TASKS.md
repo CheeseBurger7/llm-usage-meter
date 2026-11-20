@@ -130,6 +130,15 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   the same counters as final refusals. Unit tests for billed, unbilled and
   unknown categories, streamed and non-streamed, and for a call with server
   tool iterations.
+- [ ] **Proxy: detect double-counted tool-loop iterations after a fallback
+  (Q27).** On a call whose `usage.iterations` holds a `fallback_message`
+  entry, compare the top-level `usage` counts with that entry's counts. If
+  they differ, log a warning naming the message id and both sets of counts
+  (no prompt or output text), and count the call as
+  `fallback_usage_mismatches` in the shutdown log line. Events are not
+  changed. Document the check in proxy.md under Fallback attempts. Unit
+  tests: matching counts (no warning), differing counts with a serving-model
+  tool-loop entry (warning and counter), streamed and non-streamed.
 - [~] (PR #34) **Proxy: meter untagged calls under `_unassigned` (Q18).** A call
   without `X-Meter-Tenant` is recorded under the tenant set by
   `PROXY_DEFAULT_TENANT`, default `_unassigned`. An empty value keeps
