@@ -159,7 +159,7 @@ Component numbers (C1 to C10) refer to [DESIGN.md](DESIGN.md).
   false, on single and batch ingest, the client package and a migration
   (`NOT NULL DEFAULT false`). Rollups count partial events per row so
   statements can show them. Integration test.
-- [ ] **Proxy: record unfinished streams as partial (Q19).** A stream that
+- [~] (PR #43) **Proxy: record unfinished streams as partial (Q19).** A stream that
   ends before `message_stop` because the caller hung up or the connection
   dropped is recorded with `partial: true`. It holds the counts from
   `message_start` and the latest output count seen, plus the model from

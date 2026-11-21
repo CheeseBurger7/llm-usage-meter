@@ -94,9 +94,33 @@ taken as totals and never added up. A `message_delta` may carry only `output_tok
 and cache counts then stay as `message_start` reported them. `ping`, content events and event
 types the proxy does not know are ignored.
 
-One event is recorded when the stream reaches `message_stop`. A stream that does not get there is
-forwarded like any other and not metered (Q19): the caller hung up, the connection dropped, or the
-provider sent an `error` event.
+One event is recorded when the stream reaches `message_stop`.
+
+### Unfinished streams
+
+A stream that ends before `message_stop` because the caller hung up or the connection dropped is
+recorded with `partial: true` (Q19) and counted in `calls_partial` in the shutdown log line
+(part of `calls_recorded`). A warning names the message id, nothing else. The event holds:
+
+- the model from `message_start`, or the serving model if a `message_delta` with
+  `usage.iterations` already arrived;
+- the input and cache counts from `message_start`, which are exact;
+- the latest output count seen. Before the final `message_delta` that is usually only the 1 to 3
+  tokens in `message_start`, so the event undercounts output, never overcounts it;
+- `latency_ms` up to the moment the stream ended.
+
+Declined fallback attempts are not recorded for a partial stream: `usage.iterations` arrives in
+the final `message_delta`, so they are usually unknown. A partial stream whose `message_delta`
+already reported a refusal before any output follows the [refusal rule](#refusals).
+Statements bill partial events as recorded and show how many each line includes; reconciliation
+against the provider's usage report shows the missing output.
+
+A stream that carried an `error` event stays skipped. Neither the provider's
+[Streaming messages](https://platform.claude.com/docs/en/build-with-claude/streaming) page
+(section "Error events") nor its [errors](https://platform.claude.com/docs/en/api/errors) page,
+both checked on 2026-11-21, says whether input is billed when a stream ends in an error, so the
+proxy does not charge tenants for it (Q19). A stream cut off before `message_start` arrived has
+no message id or counts and is skipped as well.
 
 ## Fallback attempts
 
@@ -317,13 +341,14 @@ answered, logged with its reason and counted (`calls_skipped` in the shutdown lo
 | Chat completion with no provider label configured | The proxy does not guess one. See Q23 |
 | Streamed chat completion | Not supported yet, see [TASKS.md](TASKS.md) |
 | Chat completion with more cached than prompt tokens | The counts contradict each other |
-| Stream that ended before `message_stop`, or held an `error` event | The final counts were never seen. See Q19: once the partial streams task lands, these are recorded with `partial: true`. A stream that ended in an `error` event stays skipped unless the provider's docs confirm that its input is billed |
+| Stream that held an `error` event | The provider's docs do not say that its input is billed (Q19). A stream that ended early without one is recorded as partial, see [Unfinished streams](#unfinished-streams) |
+| Stream that ended before `message_start` arrived | No message id or counts were seen |
 | Stream without `event:` lines, or with a usage event over 1 MiB | The proxy finds usage events by their event name |
 | Compressed stream (`Content-Encoding` set) | The proxy cannot scan it |
 | `200` that is neither JSON nor an event stream, or has no `id`, `model` and `usage` (for a chat completion: no `prompt_tokens` or `completion_tokens`) | Nothing to read |
 | Response larger than 16 MiB | Capture limit, see below |
 | JSON response with a `Content-Encoding` other than gzip | The proxy cannot read it |
-| Caller disconnected before the end | The usage block was never seen |
+| Caller disconnected before the end of a non-streamed response | The usage block was never seen |
 
 Not counted, because they carry no usage: provider errors (any status other than `200`) and every
 other path, such as `/v1/messages/count_tokens`. The Message Batches API returns its usage later
@@ -354,14 +379,14 @@ through the batch results, so batch calls are not metered.
   time to first byte is the provider's (`TestStreamFirstByteIsNotDelayed`). The cost is a
   dependency on the provider's framing: the `event:` line must come before its `data:` line, as
   the provider sends it. A stream framed differently is forwarded and counted as skipped.
-- **An unfinished stream will be recorded as partial, not skipped** (Q19). Today it is skipped.
-  Before `message_stop` the proxy has exact input counts, but the output count is usually the
-  1 to 3 tokens in `message_start`, so an event understates output by an unknown amount. Skipping
-  loses the input cost as well. Recording without a marker would make an undercount look like a
+- **An unfinished stream is recorded as partial, not skipped** (Q19). Before `message_stop`
+  the proxy has exact input counts, but the output count is usually the 1 to 3 tokens in
+  `message_start`, so an event understates output by an unknown amount. Skipping loses the
+  input cost as well. Recording without a marker would make an undercount look like a
   complete call. So the event carries `partial: true`, statements bill it as recorded (it can
   only undercount) and show how many partial calls each line includes, and reconciliation
-  shows the missing output. A stream that ended in an `error` event is recorded only if the
-  provider's docs confirm that its input is billed; otherwise it stays skipped.
+  shows the missing output. A stream that ended in an `error` event stays skipped: the
+  provider's docs, checked on 2026-11-21, do not say that its input is billed.
 - **A missing tenant header never fails the call** (Q18). Rejecting would let a metering mistake
   break the product. Such calls are metered under the reserved tenant `_unassigned`
   (`PROXY_DEFAULT_TENANT`, empty means skip), so the cost shows on the dashboard as lost margin

@@ -204,18 +204,33 @@ func (s *sseMeter) apply(u *streamUsage) {
 }
 
 // result returns the events for a finished stream, or why there are none.
+//
+// A stream that ended before message_stop because the caller hung up or the
+// connection dropped is recorded as partial (OPEN_QUESTIONS Q19): the input
+// counts from message_start are exact, the output count is the latest seen
+// and usually far short of the real one. Declined fallback attempts are not
+// recorded for it, since usage.iterations arrives in the final message_delta.
+// A stream that carried an error event stays skipped: the provider's docs do
+// not say that its input is billed.
 func (s *sseMeter) result() (metered, string) {
 	switch {
 	case s.unread:
 		return metered{}, "a usage event in the stream could not be read"
 	case s.errored:
 		return metered{}, "the provider sent an error in the stream"
-	case !s.stopped:
-		return metered{}, "stream ended before message_stop"
 	case s.ev.EventID == "" || s.ev.Model == "" || !s.haveUsage:
+		if !s.stopped {
+			return metered{}, "stream ended before message_stop and before its usage was seen"
+		}
 		return metered{}, "stream has no message id, model or usage"
 	}
 	s.ev.Provider = ProviderAnthropic
+	if !s.stopped {
+		s.ev.Partial = true
+		m := metered{serving: s.ev, partial: true}
+		m.refusal = refusalWithoutOutput(s.stopReason, s.stopDetails, s.ev.OutputTokens)
+		return m, ""
+	}
 	m := metered{serving: s.ev}
 	m.declined, m.leftOut = declinedAttempts(s.ev.EventID, s.iterations)
 	m.mismatch = fallbackUsageMismatch(s.ev, s.iterations)
@@ -252,6 +267,10 @@ func (b *streamCapture) Close() error {
 		if reason != "" {
 			b.p.skip(reason)
 			return
+		}
+		if m.partial {
+			// No message_stop: latency ends where the stream did.
+			b.latency = b.p.now().Sub(b.c.start)
 		}
 		b.p.record(b.c, m, b.latency)
 	})
