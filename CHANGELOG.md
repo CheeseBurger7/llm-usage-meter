@@ -4,6 +4,13 @@ Notable changes, newest first. Breaking changes are marked **Breaking**.
 
 ## Unreleased
 
+- The proxy records a stream that ends before `message_stop` because the caller hung up or the
+  connection dropped, instead of skipping it (Q19). The event carries `partial: true`, the exact
+  input and cache counts from `message_start` and the latest output count seen, so it can only
+  undercount. Such calls are counted as `calls_partial` in the shutdown log line. A stream that
+  carried an `error` event stays skipped: the provider's docs do not say its input is billed.
+  See [docs/proxy.md](docs/proxy.md#unfinished-streams).
+
 - The proxy warns when a call that fell back has top-level usage counts that differ from its
   `fallback_message` entry, and counts those calls as `fallback_usage_mismatches` in the
   shutdown log line (Q27). Such a call may bill the serving model's tool-loop iterations twice.
