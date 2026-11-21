@@ -125,6 +125,11 @@ type Stats struct {
 	// hop's earlier tool-loop iterations may be billed twice (OPEN_QUESTIONS
 	// Q27). They are recorded as usual and logged with both sets of counts.
 	FallbackUsageMismatches uint64
+	// Partial counts the recorded streams that ended before message_stop
+	// because the caller hung up or the connection dropped. Their event
+	// carries partial: true and undercounts output (OPEN_QUESTIONS Q19).
+	// It is part of Recorded, not added to it.
+	Partial uint64
 }
 
 // Proxy is an http.Handler. It is safe for concurrent use.
@@ -141,7 +146,7 @@ type Proxy struct {
 
 	recorded, skipped, untagged          atomic.Uint64
 	refusalsUnbilled, refusalsUnknownCat atomic.Uint64
-	fallbackMismatches                   atomic.Uint64
+	fallbackMismatches, partial          atomic.Uint64
 }
 
 // New returns a Proxy that forwards to cfg.Upstream.
@@ -200,7 +205,7 @@ func (p *Proxy) Stats() Stats {
 	return Stats{
 		Recorded: p.recorded.Load(), Skipped: p.skipped.Load(), Untagged: p.untagged.Load(),
 		RefusalsUnbilled: p.refusalsUnbilled.Load(), RefusalsUnknownCategory: p.refusalsUnknownCat.Load(),
-		FallbackUsageMismatches: p.fallbackMismatches.Load(),
+		FallbackUsageMismatches: p.fallbackMismatches.Load(), Partial: p.partial.Load(),
 	}
 }
 
@@ -397,6 +402,9 @@ type metered struct {
 	// mismatch is the fallback_message entry when its counts differ from
 	// the top-level counts on serving (OPEN_QUESTIONS Q27).
 	mismatch *iteration
+	// partial is set for a stream that ended before message_stop; serving
+	// then carries Partial and holds the counts seen so far (Q19).
+	partial bool
 }
 
 // record adds what the proxy knows about the call to the events read from
@@ -433,6 +441,13 @@ func (p *Proxy) record(c *call, m metered, latency time.Duration) {
 		ev.Feature = c.feature
 		ev.Timestamp = c.start.UTC()
 		p.rec.Record(ev)
+	}
+	if m.partial {
+		// Ids only: the message id points to the provider's logs. Logged
+		// before the counters move, so a reader of Stats sees the line.
+		p.log.Warn("proxy: stream ended before message_stop; recorded as partial, output is undercounted",
+			"message_id", m.serving.EventID)
+		p.partial.Add(1)
 	}
 	p.recorded.Add(1)
 	if c.untagged {

@@ -194,7 +194,7 @@ func run(log *slog.Logger) error {
 	}
 	ps, ms := handler.Stats(), meter.Stats()
 	log.Info("stopped", "calls_recorded", ps.Recorded, "calls_skipped", ps.Skipped,
-		"calls_untagged", ps.Untagged,
+		"calls_untagged", ps.Untagged, "calls_partial", ps.Partial,
 		"refusals_unbilled", ps.RefusalsUnbilled, "refusals_unknown_category", ps.RefusalsUnknownCategory,
 		"fallback_usage_mismatches", ps.FallbackUsageMismatches,
 		"events_sent", ms.Sent, "events_rejected", ms.Rejected, "events_dropped", ms.Dropped)

@@ -117,8 +117,8 @@ func TestStreamNotMetered(t *testing.T) {
 		body string
 		want string
 	}{
-		{name: "cut off before message_stop", body: sseStart + sseContent + sseDelta, want: "before message_stop"},
-		{name: "last line never ended", body: sseStart + sseDelta + "event: message_stop\ndata: {}", want: "before message_stop"},
+		{name: "cut off before message_start", body: sseContent, want: "before message_stop"},
+		{name: "error event after a message_delta", body: sseStart + sseDelta + "event: error\ndata: {}\n\n", want: "error in the stream"},
 		{name: "error event", body: sseStart + "event: error\n" + `data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}` + "\n\n",
 			want: "error in the stream"},
 		{name: "malformed usage event", body: sseStart + "event: message_delta\ndata: {\"usage\":\n\n" + sseStop, want: "could not be read"},
@@ -137,6 +137,57 @@ func TestStreamNotMetered(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A stream that ends before message_stop is recorded as partial with the
+// counts seen so far (OPEN_QUESTIONS Q19), and without declined attempts.
+func TestStreamUnfinishedIsPartial(t *testing.T) {
+	fallbackDelta := "event: message_delta\n" +
+		`data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"input_tokens":412,"output_tokens":264,` +
+		`"iterations":[{"type":"message","model":"claude-opus-5-5","input_tokens":535,"output_tokens":9},` +
+		`{"type":"fallback_message","model":"claude-opus-4-8","input_tokens":412,"output_tokens":264}]}}` + "\n\n"
+
+	startOnly := client.Event{
+		EventID: "msg_stream_1", Provider: "anthropic", Model: "claude-opus-5-5",
+		InputTokens: 2679, OutputTokens: 3, CacheReadTokens: 50, CacheWriteTokens: 40, Partial: true,
+	}
+	afterDelta := sseWant
+	afterDelta.Partial = true
+	fallback := afterDelta
+	fallback.Model, fallback.InputTokens, fallback.OutputTokens = "claude-opus-4-8", 412, 264
+
+	tests := []struct {
+		name string
+		body string
+		want client.Event
+	}{
+		{name: "after message_start only", body: sseStart, want: startOnly},
+		{name: "in the middle of the content", body: sseStart + sseContent[:40], want: startOnly},
+		{name: "after the final message_delta", body: sseStart + sseContent + sseDelta, want: afterDelta},
+		{name: "message_stop line never ended", body: sseStart + sseDelta + "event: message_stop\ndata: {}", want: afterDelta},
+		{name: "after a fallback, no attempts", body: sseStart + fallbackDelta, want: fallback},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, piece := range []int{len(tt.body), 1, 7} {
+				m, reason := meterStreamAll(tt.body, piece)
+				if reason != "" || m.serving != tt.want || !m.partial {
+					t.Fatalf("piece %d: event = %+v, partial = %v, reason = %q, want %+v", piece, m.serving, m.partial, reason, tt.want)
+				}
+				if len(m.declined) != 0 || m.mismatch != nil {
+					t.Fatalf("piece %d: declined = %+v, mismatch = %+v, want none", piece, m.declined, m.mismatch)
+				}
+			}
+		})
+	}
+}
+
+// A complete stream is never partial.
+func TestStreamCompleteIsNotPartial(t *testing.T) {
+	m, reason := meterStreamAll(sseBody, len(sseBody))
+	if reason != "" || m.partial || m.serving.Partial {
+		t.Fatalf("partial = %v / %v, reason = %q", m.partial, m.serving.Partial, reason)
 	}
 }
 
@@ -248,9 +299,9 @@ func TestStreamFirstByteIsNotDelayed(t *testing.T) {
 	}
 }
 
-// A caller that hangs up part-way gets no event: the final counts were
-// never seen (OPEN_QUESTIONS Q19).
-func TestStreamAbandonedByCallerIsSkipped(t *testing.T) {
+// A caller that hangs up part-way gets a partial event with the counts from
+// message_start (OPEN_QUESTIONS Q19).
+func TestStreamAbandonedByCallerIsPartial(t *testing.T) {
 	gate := make(chan struct{})
 	defer close(gate)
 	f := newFixture(t, streamed(gate, sseStart, sseContent, sseDelta+sseStop))
@@ -260,6 +311,7 @@ func TestStreamAbandonedByCallerIsSkipped(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set(TenantHeader, "tenant-a")
+	req.Header.Set(FeatureHeader, "chat")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -269,9 +321,53 @@ func TestStreamAbandonedByCallerIsSkipped(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	f.waitStats(t, Stats{Skipped: 1})
-	if n := len(f.rec.all()); n != 0 {
-		t.Fatalf("recorded %d events, want 0", n)
+	f.waitStats(t, Stats{Recorded: 1, Partial: 1})
+	got := f.rec.all()[0]
+	if got.Timestamp.IsZero() || got.LatencyMs < 0 {
+		t.Fatalf("timestamp %v or latency %d out of range", got.Timestamp, got.LatencyMs)
+	}
+	got.Timestamp, got.LatencyMs = time.Time{}, 0
+	want := client.Event{
+		EventID: "msg_stream_1", TenantID: "tenant-a", Feature: "chat", Provider: "anthropic", Model: "claude-opus-5-5",
+		InputTokens: 2679, OutputTokens: 3, CacheReadTokens: 50, CacheWriteTokens: 40, Partial: true,
+	}
+	if got != want {
+		t.Fatalf("event = %+v, want %+v", got, want)
+	}
+	logs := f.logs.String()
+	if !strings.Contains(logs, "recorded as partial") || !strings.Contains(logs, "msg_stream_1") {
+		t.Fatalf("partial stream not logged:\n%s", logs)
+	}
+	if strings.Contains(logs, "tenant-a") {
+		t.Fatalf("log contains part of the call:\n%s", logs)
+	}
+}
+
+// A connection the provider drops part-way gives a partial event with the
+// latest counts seen.
+func TestStreamDroppedByProviderIsPartial(t *testing.T) {
+	f := newFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, sseStart+sseContent+sseDelta)
+		w.(http.Flusher).Flush()
+		panic(http.ErrAbortHandler) // drop the connection without message_stop
+	})
+	req, err := http.NewRequest(http.MethodPost, f.proxy.URL+"/v1/messages", strings.NewReader(requestBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set(TenantHeader, "tenant-a")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body) // ends in an error: the stream was cut
+	_ = resp.Body.Close()
+
+	f.waitStats(t, Stats{Recorded: 1, Partial: 1})
+	got := f.rec.all()[0]
+	if !got.Partial || got.OutputTokens != 510 || got.InputTokens != 10682 {
+		t.Fatalf("event = %+v, want partial with the message_delta counts", got)
 	}
 }
 

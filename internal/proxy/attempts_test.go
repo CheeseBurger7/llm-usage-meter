@@ -134,8 +134,9 @@ func TestStreamFallbackAttempts(t *testing.T) {
 		}
 	}
 
-	// A stream that did not finish records no attempt at all (Q19).
-	if m, reason := meterStreamAll(start+sseContent+delta, 7); reason == "" || len(m.declined) != 0 {
+	// A stream that did not finish is partial and records no declined
+	// attempt (Q19).
+	if m, reason := meterStreamAll(start+sseContent+delta, 7); reason != "" || !m.partial || len(m.declined) != 0 {
 		t.Fatalf("unfinished stream: metered = %+v, reason = %q", m, reason)
 	}
 }
